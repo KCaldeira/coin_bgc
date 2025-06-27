@@ -99,7 +99,7 @@ if __name__ == "__main__":
     model = "ACCESS-ESM1-5"
     filtered_df = load_and_filter_data(filepath, region, model)
     # Get user-supplied parameters from a function
-    params = first_guess_user_params(filtered_df, 50, 0.3, 0.05) # 50 years of averaging, alpha = 0.3, Ksoil = 0.05 inverse years
+    params = first_guess_user_params(filtered_df, 25, 0.3, 0.04) # 25 years of averaging, alpha = 0.3, Ksoil = 0.04 inverse years
 
     results_df = run_bgc_simulation(filtered_df, params)
     # save results_df to csv
