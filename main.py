@@ -34,11 +34,19 @@ def build_params(filtered_df, user_params):
     params['Kresp'] = Kresp
     params['alpha'] = user_params['alpha']
     params['Cland_init'] = Cland_init
+
+    # print params
+    print(params)
+    
     return params
 
 def run_bgc_simulation(filtered_df, params):
     # Sort by year
     filtered_df = filtered_df.sort_values('year').reset_index(drop=True)
+    # print size of filtered_df along with name of region and model
+    print(f"Size of filtered_df: {filtered_df.shape}")
+    print(f"Region: {filtered_df['region'].iloc[0]}")
+    print(f"Model: {filtered_df['model'].iloc[0]}")
     years = filtered_df['year'].values
     Ksoil = params['Ksoil']  # inverse years of land carbon biomass lifetime
     alpha = params['alpha']  # return on investment in carbon biomass
@@ -80,7 +88,10 @@ if __name__ == "__main__":
     filtered_df = load_and_filter_data(filepath, region, model)
     # User-supplied parameters
     user_params = {
-        'Ksoil': 0.05, # inverse years
-        'alpha': 0.3, # dimensionless exponent for power law scaleing of production with Cland
+        'Ksoil': 0.02, # inverse years
+        'alpha': 0.3 # dimensionless exponent for power law scaleing of production with Cland
+    }
     params = build_params(filtered_df, user_params)
-    run_bgc_simulation(filtered_df, params) 
+    results_df = run_bgc_simulation(filtered_df, params) 
+    # save results_df to csv
+    results_df.to_csv(f"data/output/{region}_{model}_results.csv", index=False)
