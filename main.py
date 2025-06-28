@@ -1,4 +1,7 @@
 import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
+import statsmodels.api as sm
 
 def load_and_filter_data(filepath, region, model):
     # Columns to keep
@@ -29,7 +32,7 @@ def run_bgc_simulation(filtered_df, params):
         # Calculate Ksoil, Kresp, Ktfp as linear functions of tas and pr
         Ksoil = params['Ksoil_0'] + params['Ksoil_tas'] * tas + params['Ksoil_pr'] * pr
         Kresp = params['Kresp_0'] + params['Kresp_tas'] * tas + params['Kresp_pr'] * pr
-        Ktfp  = params['Ktfp_0']  + params['Ktfp_tas']  * tas + params['Ktfp_pr']  * pr
+        Ktfp  = params['Ktfp_0'] * (1 + params['Ktfp_tas']  * tas + params['Ktfp_pr']  * pr)
         GPP = Ktfp * (Cland ** alpha)
         Presp = Kresp * GPP # plant respiration
         NPP = GPP - Presp
@@ -60,35 +63,53 @@ def run_bgc_simulation(filtered_df, params):
     return results_df
 
 def first_guess_user_params(filtered_df, n_years, alpha, Ksoil):
-    """Return a dictionary of first-guess user parameters for the model."""
     avg_start = filtered_df['year'].min()
-    avg_end = avg_start + n_years - 1
+    avg_end = avg_start + n_years - 1  # n_years=1 gives only the first year
 
     # compute Cland_init from NPP average and Ksoil
     avg_npp = filtered_df[(filtered_df['year'] >= avg_start) & (filtered_df['year'] <= avg_end)]['npp'].mean()
     Cland_init = avg_npp / Ksoil
     
-    # comput Ktfp from Cland, alpha, and GPP
+    # compute Ktfp from Cland, alpha, and GPP
     avg_gpp = filtered_df[(filtered_df['year'] >= avg_start) & (filtered_df['year'] <= avg_end)]['gpp'].mean()
     Ktfp = avg_gpp / (Cland_init ** alpha)
 
-    # compute Kresp as the 1 - avg_npp / avg_gpp
-    Kresp = 1 - avg_npp / avg_gpp
+    # --- Kresp regression with statsmodels for standard errors and p-values ---
+    mask = (filtered_df['gpp'] > 0) & (filtered_df['npp'] > 0)
+    df_reg = filtered_df[mask].copy()
+    y = (df_reg['npp'] / df_reg['gpp']).values
+    X = df_reg[['tas', 'pr']]
+    X = sm.add_constant(X)  # Adds intercept
+    model = sm.OLS(y, X).fit()
+    Kresp_0 = model.params['const']
+    Kresp_tas = model.params['tas']
+    Kresp_pr = model.params['pr']
+    print(f"Kresp_0: {Kresp_0}, Kresp_tas: {Kresp_tas}, Kresp_pr: {Kresp_pr}")
+    print(model.summary())
 
-    # print npp_avg and gpp_avg
-    print(f"npp_avg: {avg_npp}")
-    print(f"gpp_avg: {avg_gpp}")
+    # now we will do similar with total factor productivity, under the assumption that Cland is constant
+    mask = (filtered_df['gpp'] > 0) & (filtered_df['npp'] > 0)
+    df_reg = filtered_df[mask].copy()
+    y = (df_reg['gpp'] / Cland_init**alpha).values
+    X = df_reg[['tas', 'pr']]
+    X = sm.add_constant(X)  # Adds intercept
+    model = sm.OLS(y, X).fit()
+    Ktfp_0 = model.params['const']
+    Ktfp_tas = model.params['tas']/Ktfp_0
+    Ktfp_pr = model.params['pr']/Ktfp_0
+    print(f"Ktfp_0: {Ktfp_0}, Ktfp_tas: {Ktfp_tas}, Ktfp_pr: {Ktfp_pr}")
+    print(model.summary())
 
     return {
         'Ksoil_0': Ksoil,
         'Ksoil_tas': 0.0,
         'Ksoil_pr': 0.0,
-        'Kresp_0': Kresp,
-        'Kresp_tas': 0.0,
-        'Kresp_pr': 0.0,
-        'Ktfp_0': Ktfp,
-        'Ktfp_tas': 0.0,
-        'Ktfp_pr': 0.0,
+        'Kresp_0': Kresp_0,
+        'Kresp_tas': Kresp_tas,
+        'Kresp_pr': Kresp_pr,
+        'Ktfp_0': Ktfp_0,
+        'Ktfp_tas': Ktfp_tas,
+        'Ktfp_pr': Ktfp_pr,
         'alpha': alpha,
         'Cland_init': Cland_init
     }
