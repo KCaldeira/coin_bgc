@@ -234,7 +234,7 @@ def build_params(filtered_df, user_params):
         params['Cland_init'] = avg_npp / Ksoil if Ksoil != 0 else 1.0
     return params
 
-def save_fitted_parameters(fitted_params_list, output_file="data/output/step1_fitted_parameters.csv"):
+def save_fitted_parameters(fitted_params_list, output_file="coin_bgc_data/output/step1_fitted_parameters.csv"):
     """
     Save fitted parameters for all region/model combinations to a CSV file.
     Each row represents one region/model combination with all its parameters and standard errors.
@@ -274,8 +274,8 @@ if __name__ == "__main__":
         results_df = run_bgc_simulation(filtered_df, params_dict)
         
         # Save results
-        results_df.to_csv(f"data/output/{region}_{model}_step1_results.csv", index=False)
-        print(f"Results saved to data/output/{region}_{model}_step1_results.csv")
+        results_df.to_csv(f"coin_bgc_data/output/{region}_{model}_step1_results.csv", index=False)
+        print(f"Results saved to coin_bgc_data/output/{region}_{model}_step1_results.csv")
         
         # Save fitted parameters
         save_fitted_parameters([optimal_params])

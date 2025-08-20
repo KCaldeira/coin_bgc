@@ -52,18 +52,32 @@ Place your input CSV files in `data/input/`. The project uses:
 - `Data_regression_ssp585-bgc.csv` - SSP585 biogeochemical scenario data
 
 ## Output Files
-The model generates several output files in `data/output/`:
+The model generates several output files in `coin_bgc_data/output/`:
 - `{region}_{model}_step1_results.csv` - Detailed simulation results for each region/model
 - `step1_fitted_parameters.csv` - Summary of all fitted parameters with uncertainties
 
 ## Current Status
-- **Step 1**: ✅ Complete - Parameter optimization for Ksoil_0, Kresp_0, Ktfp_0, and alpha
+- **Step 1**: ✅ Complete - Parameter optimization for Ksoil_0, Kresp_0, Ktfp_0, and alpha with uncertainty estimation
 - **Steps 2-5**: 🔄 Planned - TFP estimation, climate sensitivity, prediction, and validation
+
+## Recent Updates
+- ✅ Updated output directory structure to `coin_bgc_data/output/`
+- ✅ Fixed requirements.txt with all necessary dependencies (pandas, numpy, scikit-learn, statsmodels, scipy)
+- ✅ Implemented robust parameter optimization with L-BFGS-B algorithm
+- ✅ Added comprehensive uncertainty estimation for all fitted parameters
+- ✅ Created clean, well-documented output files
 
 ## Customization
 - Edit `main.py` to change the region, model, or simulation parameters
 - Extend the model logic in `run_bgc_simulation` as needed
 - Modify the parameter estimation process in `step1_picontrol_parameter_estimation`
+
+## Dependencies
+- pandas - Data manipulation and analysis
+- numpy - Numerical operations
+- scikit-learn - Machine learning utilities
+- statsmodels - Statistical modeling
+- scipy - Scientific computing and optimization
 
 ## License
 MIT License (add your preferred license here) 
