@@ -9,7 +9,7 @@ sees CO2 increases but climate physics does not.
 import os
 import pandas as pd
 from step_utils import (
-    setup_output_directory, get_output_filename, run_single_region_model,
+    get_run_output_directory, get_output_filename, run_single_region_model,
     save_fitted_parameters, load_co2_data
 )
 
@@ -27,7 +27,7 @@ def run_step2_analysis(args, regions_to_run, models_to_run, step1_params=None):
         tuple: (all_fitted_params, successful_runs, failed_runs)
     """
     print("=== Step 2: CO2 Fertilization Effect Estimation ===")
-    print("Using SSP585bgc data (biosphere sees CO2, climate physics does not)")
+    print("Using concatenated historical + SSP585bgc data (biosphere sees CO2, climate physics does not)")
     
     # Load CO2 data
     print("Loading CO2 concentration data...")
@@ -126,7 +126,7 @@ def run_step2_analysis(args, regions_to_run, models_to_run, step1_params=None):
                 
                 # Save individual simulation results
                 results_filename = get_output_filename("simulation_results", region, model, args.step)
-                results_filepath = os.path.join(setup_output_directory(), results_filename)
+                results_filepath = os.path.join(get_run_output_directory(), results_filename)
                 results_df.to_csv(results_filepath, index=False)
                 print(f"Simulation results saved to {results_filepath}")
                 

@@ -110,7 +110,8 @@ def setup_analysis_environment(args):
     """
     Setup output directories, validate data files, etc.
     """
-    from step_utils import setup_output_directory
+    from step_utils import setup_output_directory, reset_run_timestamp
+    reset_run_timestamp()  # Reset timestamp for new run
     output_dir = setup_output_directory()
     return output_dir
 

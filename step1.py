@@ -7,7 +7,7 @@ using pre-industrial control data where CO2 and climate are constant.
 
 import os
 from step_utils import (
-    setup_output_directory, get_output_filename, run_single_region_model,
+    get_run_output_directory, get_output_filename, run_single_region_model,
     save_fitted_parameters
 )
 
@@ -85,7 +85,7 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
                 
                 # Save individual simulation results
                 results_filename = get_output_filename("simulation_results", region, model, args.step)
-                results_filepath = os.path.join(setup_output_directory(), results_filename)
+                results_filepath = os.path.join(get_run_output_directory(), results_filename)
                 results_df.to_csv(results_filepath, index=False)
                 print(f"Simulation results saved to {results_filepath}")
             else:

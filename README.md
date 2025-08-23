@@ -52,7 +52,7 @@ Ktfp = Ktfp_base * (1 + Ktfp_co2) * ((co2/co2_0) / (Ktfp_co2 + co2/co2_0))
 ```
 Where co2_0 = 284.318604 ppm (pre-industrial reference concentration)
 
-**Data used:** SSP585bgc simulation data + historical-SSP585 CO2 concentrations
+**Data used:** Concatenated historical + SSP585bgc simulation data + historical-SSP585 CO2 concentrations
 
 ### Step 3: Climate Sensitivity Estimation ✅ COMPLETED
 Use the SSP585 simulation to estimate climate sensitivity parameters for temperature and precipitation effects.
