@@ -47,15 +47,32 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
         print(f"Using provided alpha: {args.alpha}")
         has_user_params = True
     
-    # Add climate sensitivity parameters (these have defaults, so always add them)
-    user_params.update({
-        'Ksoil_tas': args.Ksoil_tas,
-        'Ksoil_pr': args.Ksoil_pr,
-        'Kresp_tas': args.Kresp_tas,
-        'Kresp_pr': args.Kresp_pr,
-        'Ktfp_tas': args.Ktfp_tas,
-        'Ktfp_pr': args.Ktfp_pr
-    })
+    # Step 1 doesn't use climate sensitivity parameters - they should be zero
+    # Only add them if explicitly provided (for testing purposes)
+    if args.Ksoil_tas is not None:
+        user_params['Ksoil_tas'] = args.Ksoil_tas
+        print(f"Using provided Ksoil_tas: {args.Ksoil_tas}")
+        has_user_params = True
+    if args.Ksoil_pr is not None:
+        user_params['Ksoil_pr'] = args.Ksoil_pr
+        print(f"Using provided Ksoil_pr: {args.Ksoil_pr}")
+        has_user_params = True
+    if args.Kresp_tas is not None:
+        user_params['Kresp_tas'] = args.Kresp_tas
+        print(f"Using provided Kresp_tas: {args.Kresp_tas}")
+        has_user_params = True
+    if args.Kresp_pr is not None:
+        user_params['Kresp_pr'] = args.Kresp_pr
+        print(f"Using provided Kresp_pr: {args.Kresp_pr}")
+        has_user_params = True
+    if args.Ktfp_tas is not None:
+        user_params['Ktfp_tas'] = args.Ktfp_tas
+        print(f"Using provided Ktfp_tas: {args.Ktfp_tas}")
+        has_user_params = True
+    if args.Ktfp_pr is not None:
+        user_params['Ktfp_pr'] = args.Ktfp_pr
+        print(f"Using provided Ktfp_pr: {args.Ktfp_pr}")
+        has_user_params = True
     
     if has_user_params:
         print("Running with user-provided parameters (no optimization)")

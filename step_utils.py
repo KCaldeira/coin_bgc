@@ -75,6 +75,36 @@ def load_and_filter_data(filepath, region, model):
     df = pd.read_csv(filepath, usecols=columns)
     # Filter for region and model
     filtered = df[(df['region'] == region) & (df['model'] == model)]
+    
+    # Remove rows where year is NaN (invalid data)
+    original_count = len(filtered)
+    filtered = filtered.dropna(subset=['year'])
+    if len(filtered) < original_count:
+        print(f"Warning: Removed {original_count - len(filtered)} rows with NaN year values from {filepath}")
+    
+    # Check for data quality issues
+    tas_none_mask = filtered['tas'].isna() | (filtered['tas'] == None)
+    pr_none_mask = filtered['pr'].isna() | (filtered['pr'] == None)
+    
+    if tas_none_mask.any() or pr_none_mask.any():
+        # Find the specific rows with missing data
+        tas_missing = filtered[tas_none_mask]
+        pr_missing = filtered[pr_none_mask]
+        
+        print(f"ERROR: Missing temperature (tas) data in {filepath}")
+        if not tas_missing.empty:
+            print(f"  Missing tas values for {len(tas_missing)} rows:")
+            for _, row in tas_missing.iterrows():
+                print(f"    Year: {row['year']}, Region: {row['region']}, Model: {row['model']}, tas value: {row['tas']}")
+        
+        print(f"ERROR: Missing precipitation (pr) data in {filepath}")
+        if not pr_missing.empty:
+            print(f"  Missing pr values for {len(pr_missing)} rows:")
+            for _, row in pr_missing.iterrows():
+                print(f"    Year: {row['year']}, Region: {row['region']}, Model: {row['model']}, pr value: {row['pr']}")
+        
+        raise ValueError(f"Data quality issue: Missing tas/pr values in {filepath} for {region}/{model}")
+    
     return filtered
 
 def load_and_filter_data_step2(region, model):
@@ -98,8 +128,37 @@ def load_and_filter_data_step2(region, model):
         # Concatenate the two datasets
         combined_df = pd.concat([hist_filtered, ssp585_filtered], ignore_index=True)
         
+        # Remove rows where year is NaN (invalid data)
+        original_count = len(combined_df)
+        combined_df = combined_df.dropna(subset=['year'])
+        if len(combined_df) < original_count:
+            print(f"Warning: Removed {original_count - len(combined_df)} rows with NaN year values from Step 2 concatenated data")
+        
         # Sort by year to ensure chronological order
         combined_df = combined_df.sort_values('year').reset_index(drop=True)
+        
+        # Check for data quality issues
+        tas_none_mask = combined_df['tas'].isna() | (combined_df['tas'] == None)
+        pr_none_mask = combined_df['pr'].isna() | (combined_df['pr'] == None)
+        
+        if tas_none_mask.any() or pr_none_mask.any():
+            # Find the specific rows with missing data
+            tas_missing = combined_df[tas_none_mask]
+            pr_missing = combined_df[pr_none_mask]
+            
+            print(f"ERROR: Missing temperature (tas) data in Step 2 concatenated data")
+            if not tas_missing.empty:
+                print(f"  Missing tas values for {len(tas_missing)} rows:")
+                for _, row in tas_missing.iterrows():
+                    print(f"    Year: {row['year']}, Region: {row['region']}, Model: {row['model']}, tas value: {row['tas']}")
+            
+            print(f"ERROR: Missing precipitation (pr) data in Step 2 concatenated data")
+            if not pr_missing.empty:
+                print(f"  Missing pr values for {len(pr_missing)} rows:")
+                for _, row in pr_missing.iterrows():
+                    print(f"    Year: {row['year']}, Region: {row['region']}, Model: {row['model']}, pr value: {row['pr']}")
+            
+            raise ValueError(f"Data quality issue: Missing tas/pr values in Step 2 data for {region}/{model}")
         
         print(f"Loaded {len(hist_filtered)} historical + {len(ssp585_filtered)} SSP585-bgc records for {region}/{model}")
         
@@ -107,6 +166,67 @@ def load_and_filter_data_step2(region, model):
         
     except Exception as e:
         print(f"Error loading Step 2 data for {region}/{model}: {e}")
+        return pd.DataFrame()
+
+def load_and_filter_data_step3(region, model):
+    """
+    Load and concatenate historical and SSP585 data for Step 3.
+    """
+    try:
+        # Columns to keep
+        columns = ['year', 'tas', 'pr', 'gpp', 'npp', 'region', 'model']
+        
+        # Load historical data
+        hist_file = "data/input/Data_regression_historical.csv"
+        hist_df = pd.read_csv(hist_file, usecols=columns)
+        hist_filtered = hist_df[(hist_df['region'] == region) & (hist_df['model'] == model)].copy()
+        
+        # Load SSP585 data
+        ssp585_file = "data/input/Data_regression_ssp585.csv"
+        ssp585_df = pd.read_csv(ssp585_file, usecols=columns)
+        ssp585_filtered = ssp585_df[(ssp585_df['region'] == region) & (ssp585_df['model'] == model)].copy()
+        
+        # Concatenate the two datasets
+        combined_df = pd.concat([hist_filtered, ssp585_filtered], ignore_index=True)
+        
+        # Remove rows where year is NaN (invalid data)
+        original_count = len(combined_df)
+        combined_df = combined_df.dropna(subset=['year'])
+        if len(combined_df) < original_count:
+            print(f"Warning: Removed {original_count - len(combined_df)} rows with NaN year values from Step 3 concatenated data")
+        
+        # Sort by year to ensure chronological order
+        combined_df = combined_df.sort_values('year').reset_index(drop=True)
+        
+        # Check for data quality issues
+        tas_none_mask = combined_df['tas'].isna() | (combined_df['tas'] == None)
+        pr_none_mask = combined_df['pr'].isna() | (combined_df['pr'] == None)
+        
+        if tas_none_mask.any() or pr_none_mask.any():
+            # Find the specific rows with missing data
+            tas_missing = combined_df[tas_none_mask]
+            pr_missing = combined_df[pr_none_mask]
+            
+            print(f"ERROR: Missing temperature (tas) data in Step 3 concatenated data")
+            if not tas_missing.empty:
+                print(f"  Missing tas values for {len(tas_missing)} rows:")
+                for _, row in tas_missing.iterrows():
+                    print(f"    Year: {row['year']}, Region: {row['region']}, Model: {row['model']}, tas value: {row['tas']}")
+            
+            print(f"ERROR: Missing precipitation (pr) data in Step 3 concatenated data")
+            if not pr_missing.empty:
+                print(f"  Missing pr values for {len(pr_missing)} rows:")
+                for _, row in pr_missing.iterrows():
+                    print(f"    Year: {row['year']}, Region: {row['region']}, Model: {row['model']}, pr value: {row['pr']}")
+            
+            raise ValueError(f"Data quality issue: Missing tas/pr values in Step 3 data for {region}/{model}")
+        
+        print(f"Loaded {len(hist_filtered)} historical + {len(ssp585_filtered)} SSP585 records for {region}/{model}")
+        
+        return combined_df
+        
+    except Exception as e:
+        print(f"Error loading Step 3 data for {region}/{model}: {e}")
         return pd.DataFrame()
 
 def load_co2_data(filepath="data/input/historical-ssp585_co2.csv"):
@@ -149,6 +269,29 @@ def run_bgc_simulation(filtered_df, params, co2_df=None, co2_0=284.318604):
     # Sort by year
     filtered_df = filtered_df.sort_values('year').reset_index(drop=True)
     
+    # Check for None/NaN values in critical columns
+    tas_none_mask = filtered_df['tas'].isna() | (filtered_df['tas'] == None)
+    pr_none_mask = filtered_df['pr'].isna() | (filtered_df['pr'] == None)
+    
+    if tas_none_mask.any() or pr_none_mask.any():
+        # Find the specific rows with missing data
+        tas_missing = filtered_df[tas_none_mask]
+        pr_missing = filtered_df[pr_none_mask]
+        
+        print(f"ERROR: Missing temperature (tas) data in simulation data")
+        if not tas_missing.empty:
+            print(f"  Missing tas values for {len(tas_missing)} rows:")
+            for _, row in tas_missing.iterrows():
+                print(f"    Year: {row['year']}, Region: {row['region']}, Model: {row['model']}, tas value: {row['tas']}")
+        
+        print(f"ERROR: Missing precipitation (pr) data in simulation data")
+        if not pr_missing.empty:
+            print(f"  Missing pr values for {len(pr_missing)} rows:")
+            for _, row in pr_missing.iterrows():
+                print(f"    Year: {row['year']}, Region: {row['region']}, Model: {row['model']}, pr value: {row['pr']}")
+        
+        raise ValueError("Data quality issue: Missing tas/pr values in simulation data")
+    
     years = filtered_df['year'].values
     alpha = params.get('alpha', 0.5)  # dimensionless exponent for power law scaling of production with Cland
     Cland = params.get('Cland_init', 1.0)
@@ -159,6 +302,19 @@ def run_bgc_simulation(filtered_df, params, co2_df=None, co2_0=284.318604):
         year = row['year']
         tas = row['tas']
         pr = row['pr']
+        
+        # Verify tas and pr are not None/NaN (should have been caught earlier)
+        if tas is None or pd.isna(tas):
+            raise ValueError(f"Temperature (tas) is None/NaN for year {year}, region {row['region']}, model {row['model']}, tas value: {tas}")
+        if pr is None or pd.isna(pr):
+            raise ValueError(f"Precipitation (pr) is None/NaN for year {year}, region {row['region']}, model {row['model']}, pr value: {pr}")
+        
+        # Additional check: ensure tas and pr are numeric
+        try:
+            tas = float(tas)
+            pr = float(pr)
+        except (ValueError, TypeError):
+            raise ValueError(f"Non-numeric tas or pr value for year {year}, region {row['region']}, model {row['model']}, tas: {tas}, pr: {pr}")
         
         # Get CO2 concentration for this year
         co2 = get_co2_for_year(co2_df, year) if co2_df is not None else co2_0
@@ -240,6 +396,17 @@ def objective_function(params, filtered_df, param_names, user_params):
     # Run simulation
     # Note: co2_df is not available in objective_function, so we need to pass it through user_params
     co2_df = user_params.get('_co2_df', None)
+    
+    # Quick check to ensure we have valid data
+    if filtered_df.empty:
+        print("ERROR: filtered_df is empty in objective_function")
+        return 1e6  # Return high error
+    
+    # Check for any None values in tas or pr
+    if filtered_df['tas'].isna().any() or filtered_df['pr'].isna().any():
+        print("ERROR: Found NaN values in tas or pr in objective_function")
+        return 1e6  # Return high error
+    
     results_df = run_bgc_simulation(filtered_df, param_dict, co2_df)
     
     # Calculate error (MSE between simulated and observed NPP)
@@ -261,8 +428,8 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
             # For step2, concatenate historical and SSP585-bgc data
             filtered_df = load_and_filter_data_step2(region, model)
         elif args.step == "step3":
-            data_file = "data/input/Data_regression_ssp585.csv"
-            filtered_df = load_and_filter_data(data_file, region, model)
+            # For step3, concatenate historical and SSP585 data
+            filtered_df = load_and_filter_data_step3(region, model)
         elif args.step == "all":
             # For "all", determine step based on data file or context
             # This will be determined by the calling function
@@ -339,31 +506,50 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
         if args.step == "step3":
             climate_params = ['Ksoil_tas', 'Ksoil_pr', 'Kresp_tas', 'Kresp_pr', 'Ktfp_tas', 'Ktfp_pr']
             for param in climate_params:
-                # For step3, always optimize climate sensitivity parameters
-                param_names.append(param)
-                if 'tas' in param:
-                    param_bounds.append((-0.99, 0.99))  # Temperature sensitivity bounds
-                    initial_guess.append(user_params.get(param, 0.0))
-                else:
-                    param_bounds.append((-0.99, 0.99))  # Precipitation sensitivity bounds
-                    initial_guess.append(user_params.get(param, 0.0))
+                # Only optimize climate sensitivity parameters that are not in user_params (i.e., not set to a specific value)
+                if param not in user_params:
+                    param_names.append(param)
+                    if 'tas' in param:
+                        param_bounds.append((-0.99, 0.99))  # Temperature sensitivity bounds
+                        # Use non-zero starting values for temperature sensitivity
+                        initial_guess.append(0.1)  # Start with positive temperature sensitivity
+                    else:
+                        param_bounds.append((-0.99, 0.99))  # Precipitation sensitivity bounds
+                        # Use non-zero starting values for precipitation sensitivity
+                        initial_guess.append(-0.05)  # Start with negative precipitation sensitivity
         
         if not param_names:
             print("No parameters to optimize")
             return False, {}, pd.DataFrame()
         
+
+        
         # Add CO2 data to user_params for objective function
         if co2_df is not None:
             user_params['_co2_df'] = co2_df
+        else:
+            # Ensure _co2_df is always present in user_params
+            user_params['_co2_df'] = None
         
         # Run optimization
+        print(f"DEBUG: Starting optimization with {len(param_names)} parameters")
+        print(f"DEBUG: Initial guess: {initial_guess}")
+        print(f"DEBUG: Initial objective value: {objective_function(initial_guess, filtered_df, param_names, user_params)}")
+        
         result = optimize.minimize(
             objective_function,
             initial_guess,
             args=(filtered_df, param_names, user_params),
             bounds=param_bounds,
-            method='L-BFGS-B'
+            method='L-BFGS-B',
+            options={'maxiter': 1000, 'gtol': 1e-8}  # Increase iterations and tolerance
         )
+        
+        print(f"DEBUG: Optimization finished. Success: {result.success}")
+        print(f"DEBUG: Final objective value: {result.fun}")
+        print(f"DEBUG: Number of iterations: {result.nit}")
+        print(f"DEBUG: Number of function evaluations: {result.nfev}")
+        print(f"DEBUG: Final parameter values: {result.x}")
         
         if result.success:
             # Create parameter dictionary

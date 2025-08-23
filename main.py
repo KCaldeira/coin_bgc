@@ -205,18 +205,18 @@ def parse_command_line_args():
                        help='CO2 sensitivity of total factor productivity (Step 2 parameter)')
     
     # Climate sensitivity parameters
-    parser.add_argument('--Ksoil_tas', type=float, default=0.0,
-                       help='Temperature sensitivity of soil respiration')
-    parser.add_argument('--Ksoil_pr', type=float, default=0.0,
-                       help='Precipitation sensitivity of soil respiration')
-    parser.add_argument('--Kresp_tas', type=float, default=0.0,
-                       help='Temperature sensitivity of plant respiration')
-    parser.add_argument('--Kresp_pr', type=float, default=0.0,
-                       help='Precipitation sensitivity of plant respiration')
-    parser.add_argument('--Ktfp_tas', type=float, default=0.0,
-                       help='Temperature sensitivity of total factor productivity')
-    parser.add_argument('--Ktfp_pr', type=float, default=0.0,
-                       help='Precipitation sensitivity of total factor productivity')
+    parser.add_argument('--Ksoil_tas', type=float, default=None,
+                       help='Temperature sensitivity of soil respiration (if None, will be optimized)')
+    parser.add_argument('--Ksoil_pr', type=float, default=None,
+                       help='Precipitation sensitivity of soil respiration (if None, will be optimized)')
+    parser.add_argument('--Kresp_tas', type=float, default=None,
+                       help='Temperature sensitivity of plant respiration (if None, will be optimized)')
+    parser.add_argument('--Kresp_pr', type=float, default=None,
+                       help='Precipitation sensitivity of plant respiration (if None, will be optimized)')
+    parser.add_argument('--Ktfp_tas', type=float, default=None,
+                       help='Temperature sensitivity of total factor productivity (if None, will be optimized)')
+    parser.add_argument('--Ktfp_pr', type=float, default=None,
+                       help='Precipitation sensitivity of total factor productivity (if None, will be optimized)')
     
     # Output options
     parser.add_argument('--output-dir', type=str, default='data/output',

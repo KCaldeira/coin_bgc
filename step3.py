@@ -27,7 +27,7 @@ def run_step3_analysis(args, regions_to_run, models_to_run, step1_params=None, s
         tuple: (all_fitted_params, successful_runs, failed_runs)
     """
     print("=== Step 3: Climate Sensitivity Estimation ===")
-    print("Using SSP585 data (both CO2 and climate change)")
+    print("Using concatenated historical + SSP585 data (both CO2 and climate change)")
     
     # Load CO2 data
     print("Loading CO2 concentration data...")
@@ -70,15 +70,31 @@ def run_step3_analysis(args, regions_to_run, models_to_run, step1_params=None, s
         print(f"Using provided Ktfp_co2: {args.Ktfp_co2}")
         has_user_params = True
     
-    # Add climate sensitivity parameters (these have defaults, so always add them)
-    user_params.update({
-        'Ksoil_tas': args.Ksoil_tas,
-        'Ksoil_pr': args.Ksoil_pr,
-        'Kresp_tas': args.Kresp_tas,
-        'Kresp_pr': args.Kresp_pr,
-        'Ktfp_tas': args.Ktfp_tas,
-        'Ktfp_pr': args.Ktfp_pr
-    })
+    # Add climate sensitivity parameters only if explicitly provided by user
+    if args.Ksoil_tas is not None:
+        user_params['Ksoil_tas'] = args.Ksoil_tas
+        print(f"Using provided Ksoil_tas: {args.Ksoil_tas}")
+        has_user_params = True
+    if args.Ksoil_pr is not None:
+        user_params['Ksoil_pr'] = args.Ksoil_pr
+        print(f"Using provided Ksoil_pr: {args.Ksoil_pr}")
+        has_user_params = True
+    if args.Kresp_tas is not None:
+        user_params['Kresp_tas'] = args.Kresp_tas
+        print(f"Using provided Kresp_tas: {args.Kresp_tas}")
+        has_user_params = True
+    if args.Kresp_pr is not None:
+        user_params['Kresp_pr'] = args.Kresp_pr
+        print(f"Using provided Kresp_pr: {args.Kresp_pr}")
+        has_user_params = True
+    if args.Ktfp_tas is not None:
+        user_params['Ktfp_tas'] = args.Ktfp_tas
+        print(f"Using provided Ktfp_tas: {args.Ktfp_tas}")
+        has_user_params = True
+    if args.Ktfp_pr is not None:
+        user_params['Ktfp_pr'] = args.Ktfp_pr
+        print(f"Using provided Ktfp_pr: {args.Ktfp_pr}")
+        has_user_params = True
     
     if has_user_params:
         print("Running with user-provided parameters (no optimization)")
@@ -110,12 +126,12 @@ def run_step3_analysis(args, regions_to_run, models_to_run, step1_params=None, s
                     'Kresp_0': step1_param_dict.get('Kresp_0', step_params.get('Kresp_0')),
                     'Ktfp_0': step1_param_dict.get('Ktfp_0', step_params.get('Ktfp_0')),
                     'alpha': step1_param_dict.get('alpha', step_params.get('alpha')),
-                    'Ksoil_tas': step1_param_dict.get('Ksoil_tas', step_params.get('Ksoil_tas')),
-                    'Ksoil_pr': step1_param_dict.get('Ksoil_pr', step_params.get('Ksoil_pr')),
-                    'Kresp_tas': step1_param_dict.get('Kresp_tas', step_params.get('Kresp_tas')),
-                    'Kresp_pr': step1_param_dict.get('Kresp_pr', step_params.get('Kresp_pr')),
-                    'Ktfp_tas': step1_param_dict.get('Ktfp_tas', step_params.get('Ktfp_tas')),
-                    'Ktfp_pr': step1_param_dict.get('Ktfp_pr', step_params.get('Ktfp_pr'))
+                    'Ksoil_tas': step1_param_dict.get('Ksoil_tas', -0.1),
+                    'Ksoil_pr': step1_param_dict.get('Ksoil_pr', 0.1),
+                    'Kresp_tas': step1_param_dict.get('Kresp_tas', -0.1),
+                    'Kresp_pr': step1_param_dict.get('Kresp_pr', 0.1),
+                    'Ktfp_tas': step1_param_dict.get('Ktfp_tas', -0.01),
+                    'Ktfp_pr': step1_param_dict.get('Ktfp_pr', 0.01)
                 })
                 print(f"Using Step 1 parameters for {region} / {model}")
             

@@ -6,10 +6,10 @@ This project simulates the behavior of the land-surface model under climate chan
 ## Overall Goal
 The overall goal is to simulate land-surface behavior under climate change using a Solow-Swan growth model. The system is under-determined by one parameter, so **Ksoil_0** (inverse time constant for heterotrophic respiration) is chosen a priori.
 
-## Current State - ALL STEPS COMPLETED ✅
+## Current State - STEPS 1-2 COMPLETED, STEP 3 HAS KNOWN ISSUE
 - **Step 1 COMPLETED**: Pre-industrial parameter fitting using piControl data
 - **Step 2 COMPLETED**: CO2 fertilization effect estimation using SSP585bgc data
-- **Step 3 COMPLETED**: Climate sensitivity parameter estimation using SSP585 data
+- **Step 3 KNOWN ISSUE**: Climate sensitivity parameter estimation (optimization not changing initial guesses)
 - **Code Refactoring COMPLETED**: Modular architecture with step-specific modules
 - **Virtual Environment COMPLETED**: Isolated Python environment with all dependencies
 - **Multi-region processing**: Can run for all countries and models simultaneously
@@ -17,8 +17,9 @@ The overall goal is to simulate land-surface behavior under climate change using
 - **Batch processing**: Single command processes multiple regions/models
 - **Parameter inheritance**: Each step uses results from previous steps as starting values
 - **Comprehensive output**: Timestamped CSV files with all fitted parameters
+- **Flexible parameter control**: Can set specific climate sensitivity parameters to zero while optimizing others
 
-## Processing Strategy - ALL IMPLEMENTED ✅
+## Processing Strategy - STEPS 1-2 IMPLEMENTED, STEP 3 HAS ISSUE
 
 ### Step 1: Pre-industrial Parameter Fitting ✅ COMPLETED
 **Goal**: Fit Solow-Swan growth model parameters to pre-industrial climate model simulation, assuming no climate change response.
@@ -55,7 +56,7 @@ Where co2_0 = 284.318604 ppm (pre-industrial reference concentration)
 
 **Status:** ✅ **FULLY IMPLEMENTED AND TESTED**
 
-### Step 3: Climate Sensitivity Estimation ✅ COMPLETED
+### Step 3: Climate Sensitivity Estimation ⚠️ KNOWN ISSUE
 **Goal**: Use SSP585 simulation to estimate climate sensitivity parameters.
 
 **Parameters fitted:**
@@ -69,9 +70,11 @@ Where co2_0 = 284.318604 ppm (pre-industrial reference concentration)
 **Parameters from Steps 1-2 used as starting values:**
 - Ksoil_0, Kresp_0, Ktfp_0, alpha, Ktfp_co2
 
-**Data used:** SSP585 simulation data (full climate change scenario)
+**Data used:** Concatenated historical + SSP585 simulation data
 
-**Status:** ✅ **FULLY IMPLEMENTED AND TESTED**
+**⚠️ KNOWN ISSUE:** The optimization in Step 3 is currently not changing the initial guess values for climate sensitivity parameters. The optimization appears to be running but returning the initial values instead of finding optimal solutions. This suggests either a flat objective function or numerical issues with the optimization process.
+
+**Status:** ⚠️ **IMPLEMENTED BUT HAS OPTIMIZATION ISSUE**
 
 ## Code Architecture - MODULAR STRUCTURE IMPLEMENTED ✅
 
@@ -129,6 +132,11 @@ The project has been successfully refactored into a clean, modular architecture:
 - Fixed activation script to prevent duplicate prompts
 - Exact version specifications in `requirements.txt`
 
+#### 5. **Flexible Parameter Control**
+- Can set specific climate sensitivity parameters to zero via command line
+- Only optimizes parameters not explicitly set
+- Allows testing different parameter combinations
+
 ## Command Line Interface - FULLY IMPLEMENTED ✅
 
 ### Individual Step Execution
@@ -157,7 +165,9 @@ python main.py --step all --regions "Zimbabwe" "Zambia" --models "ACCESS-ESM1-5"
 # Fix specific parameters for any step
 python main.py --step step1 --Ksoil_0 0.05 --region "Zimbabwe"
 python main.py --step step2 --Ktfp_co2 0.1 --region "Zimbabwe"
-python main.py --step step3 --Ksoil_tas 0.01 --region "Zimbabwe"
+
+# Set some climate sensitivity parameters to zero while optimizing others
+python main.py --step step3 --Ksoil_tas 0.0 --Ksoil_pr 0.0 --Kresp_tas 0.0 --Kresp_pr 0.0 --region "Zimbabwe"
 ```
 
 ## Data Flow Between Steps - IMPLEMENTED ✅
@@ -177,7 +187,7 @@ python main.py --step step3 --Ksoil_tas 0.01 --region "Zimbabwe"
    - Timestamped output files for each step
    - Individual simulation results for each region/model combination
 
-## Testing Results - ALL STEPS WORKING ✅
+## Testing Results - STEPS 1-2 WORKING, STEP 3 HAS ISSUE
 
 ### Step 1 Test Results
 - **Region/Model**: Zimbabwe / ACCESS-ESM1-5
@@ -202,10 +212,10 @@ python main.py --step step3 --Ksoil_tas 0.01 --region "Zimbabwe"
 ### Step 3 Test Results
 - **Region/Model**: Zimbabwe / ACCESS-ESM1-5
 - **Fitted Parameters**:
-  - All climate sensitivity parameters: 0.0 (converged to optimal values)
+  - All climate sensitivity parameters: Returning initial guess values (not optimizing)
   - All Step 1 and Step 2 parameters inherited
 - **Final MSE**: 0.252
-- **Status**: ✅ **SUCCESS**
+- **Status**: ⚠️ **OPTIMIZATION ISSUE - NOT CHANGING INITIAL GUESSES**
 
 ## Output Files - TIMESTAMPED AND ORGANIZED ✅
 
@@ -226,7 +236,7 @@ Each output file contains:
 
 ## Key Advantages of Current Implementation
 
-1. **Complete Functionality**: All three analysis steps fully implemented and tested
+1. **Complete Functionality**: Steps 1-2 fully implemented and tested
 2. **Modular Architecture**: Clean separation of concerns with step-specific modules
 3. **Parameter Inheritance**: Automatic loading and use of previous step results
 4. **CO2 Integration**: Full support for historical and future CO2 concentrations
@@ -237,19 +247,63 @@ Each output file contains:
 9. **Robust**: Comprehensive error handling and optimization
 10. **Extensible**: Easy to add new parameters and steps
 
-## Project Status Summary
+## Critical Data Quality Standards - NO BAND-AID FIXES
+
+**IMPORTANT**: This project follows strict data quality standards. The user explicitly requires:
+
+### Data Quality Requirements
+- **NO masking of data problems**: The code will NOT silently fill missing values or apply band-aid fixes
+- **Immediate error reporting**: Any missing or invalid data will cause the program to terminate with detailed error messages
+- **Specific problem identification**: Errors will report exactly which file, row, year, region, and model has data quality issues
+- **Transparent operation**: All potential problems with data or code must be reported to the user immediately
+
+### Error Handling Philosophy
+- **Fail fast**: Stop execution immediately when data quality issues are detected
+- **Detailed diagnostics**: Provide specific information about what data is missing and where
+- **No silent failures**: Never proceed with potentially incorrect data
+- **User awareness**: Ensure the user is always aware of any data or code problems
+
+### Implementation Details
+- All data loading functions check for missing `tas` and `pr` values
+- Missing data triggers detailed error reports showing exact file locations and row details
+- The simulation will terminate rather than proceed with potentially incorrect assumptions
+- This ensures data quality issues are fixed at the source rather than masked by the code
+
+## Known Issues and Next Steps
+
+### Current Issue: Step 3 Optimization
+**Problem**: The optimization in Step 3 is not changing the initial guess values for climate sensitivity parameters. The optimization appears to be running but returning the initial values instead of finding optimal solutions.
+
+**Possible Causes**:
+1. **Flat objective function**: The objective function may be insensitive to climate sensitivity parameters
+2. **Numerical issues**: The optimization algorithm may be having convergence problems
+3. **Parameter scaling**: The parameters may need different scaling or bounds
+4. **Data quality**: The concatenated data may have issues affecting optimization
+
+**Investigation Needed**:
+1. Analyze the objective function sensitivity to climate sensitivity parameters
+2. Test different optimization algorithms and parameters
+3. Examine the concatenated data quality and structure
+4. Consider parameter re-scaling or different bounds
+
+### Project Status Summary
 - **Step 1**: ✅ **FULLY COMPLETED** - Pre-industrial parameter fitting with uncertainty estimation
 - **Step 2**: ✅ **FULLY COMPLETED** - CO2 fertilization effect estimation with historical-SSP585 CO2 data
-- **Step 3**: ✅ **FULLY COMPLETED** - Climate sensitivity parameter estimation
+- **Step 3**: ⚠️ **IMPLEMENTED BUT HAS OPTIMIZATION ISSUE** - Climate sensitivity parameter estimation
 - **Code Architecture**: ✅ **FULLY COMPLETED** - Modular structure with step-specific modules
 - **Virtual Environment**: ✅ **FULLY COMPLETED** - Isolated Python environment with all dependencies
-- **Testing**: ✅ **FULLY COMPLETED** - All steps tested and working correctly
+- **Testing**: ⚠️ **PARTIAL** - Steps 1-2 tested and working, Step 3 needs optimization fix
 - **Documentation**: ✅ **FULLY COMPLETED** - README.md and CONTINUATION.md updated
 
 ## Next Steps for Analysis
 
-### Ready for Production Use
-The code is now ready for:
+### Immediate Priority: Fix Step 3 Optimization
+1. **Debug optimization**: Investigate why Step 3 optimization is not changing initial guesses
+2. **Test alternatives**: Try different optimization algorithms, bounds, or parameter scaling
+3. **Validate data**: Ensure concatenated data is properly structured for optimization
+4. **Parameter sensitivity**: Analyze objective function sensitivity to climate parameters
+
+### Ready for Production Use (After Step 3 Fix)
 1. **Full-scale analysis**: Run all steps for all regions and models
 2. **Parameter sensitivity studies**: Test different parameter combinations
 3. **Model validation**: Compare predictions with observed climate responses
@@ -265,4 +319,4 @@ The code is now ready for:
 
 ---
 
-_Last updated: All three analysis steps fully implemented and tested, modular architecture completed, virtual environment configured, ready for production use_ 
+_Last updated: Steps 1-2 fully implemented and tested, Step 3 implemented but has optimization issue, modular architecture completed, virtual environment configured, ready for Step 3 optimization debugging_ 

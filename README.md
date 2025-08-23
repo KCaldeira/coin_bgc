@@ -54,7 +54,7 @@ Where co2_0 = 284.318604 ppm (pre-industrial reference concentration)
 
 **Data used:** Concatenated historical + SSP585bgc simulation data + historical-SSP585 CO2 concentrations
 
-### Step 3: Climate Sensitivity Estimation ✅ COMPLETED
+### Step 3: Climate Sensitivity Estimation ⚠️ KNOWN ISSUE
 Use the SSP585 simulation to estimate climate sensitivity parameters for temperature and precipitation effects.
 
 **Parameters fitted:**
@@ -68,7 +68,9 @@ Use the SSP585 simulation to estimate climate sensitivity parameters for tempera
 **Parameters from Steps 1-2 used as starting values:**
 - Ksoil_0, Kresp_0, Ktfp_0, alpha, Ktfp_co2
 
-**Data used:** SSP585 simulation data (full climate change scenario)
+**Data used:** Concatenated historical + SSP585 simulation data
+
+**⚠️ KNOWN ISSUE:** The optimization in Step 3 is currently not changing the initial guess values for climate sensitivity parameters. The optimization appears to be running but returning the initial values instead of finding optimal solutions. This suggests either a flat objective function or numerical issues with the optimization process.
 
 ## Code Architecture
 
@@ -89,6 +91,7 @@ The project has been refactored into a modular structure:
 - **Climate sensitivity**: Temperature and precipitation effects on all parameters
 - **Comprehensive output**: Timestamped CSV files with all fitted parameters
 - **Virtual environment**: Isolated Python environment for dependencies
+- **Flexible parameter control**: Set specific parameters to zero while optimizing others
 
 ## Getting Started
 
@@ -128,11 +131,15 @@ python main.py --step all --regions "Zimbabwe" "Zambia" --models "ACCESS-ESM1-5"
 # Fix specific parameters for any step
 python main.py --step step1 --Ksoil_0 0.05 --region "Zimbabwe"
 python main.py --step step2 --Ktfp_co2 0.1 --region "Zimbabwe"
+
+# Set some climate sensitivity parameters to zero while optimizing others
+python main.py --step step3 --Ksoil_tas 0.0 --Ksoil_pr 0.0 --Kresp_tas 0.0 --Kresp_pr 0.0 --region "Zimbabwe"
 ```
 
 ## Input Data
 Place your input CSV files in `data/input/`. The project uses:
 - `Data_regression_piControl.csv` - Pre-industrial control data (Step 1)
+- `Data_regression_historical.csv` - Historical data (Steps 2-3)
 - `Data_regression_ssp585bgc.csv` - SSP585 biogeochemical scenario data (Step 2)
 - `Data_regression_ssp585.csv` - SSP585 scenario data (Step 3)
 - `historical-ssp585_co2.csv` - Historical and future CO2 concentrations (Steps 2-3)
@@ -147,7 +154,7 @@ The model generates timestamped output files in `data/output/`:
 ## Current Status
 - **Step 1**: ✅ **COMPLETED** - Pre-industrial parameter fitting with uncertainty estimation
 - **Step 2**: ✅ **COMPLETED** - CO2 fertilization effect estimation with historical-SSP585 CO2 data
-- **Step 3**: ✅ **COMPLETED** - Climate sensitivity parameter estimation
+- **Step 3**: ⚠️ **KNOWN ISSUE** - Climate sensitivity parameter estimation (optimization not changing initial guesses)
 - **Code Refactoring**: ✅ **COMPLETED** - Modular architecture with step-specific modules
 - **Virtual Environment**: ✅ **COMPLETED** - Isolated Python environment with all dependencies
 
@@ -157,7 +164,7 @@ The model generates timestamped output files in `data/output/`:
 - `--model` / `--models`: Specify single model or list of models
 - `--Ksoil_0`, `--Kresp_0`, `--Ktfp_0`, `--alpha`: Fix specific parameters
 - `--Ktfp_co2`: Fix CO2 fertilization parameter
-- `--Ksoil_tas`, `--Ksoil_pr`, etc.: Set climate sensitivity parameters
+- `--Ksoil_tas`, `--Ksoil_pr`, etc.: Set climate sensitivity parameters (use 0.0 to fix, omit to optimize)
 
 ## Dependencies
 - pandas==2.0.3 - Data manipulation and analysis
