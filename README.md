@@ -23,10 +23,10 @@ Where Ksoil, Kresp, and Ktfp can be functions of temperature (tas), precipitatio
 
 ## Processing Steps
 
-### Step 1: Pre-industrial Parameter Fitting ✅
+### Step 1: Pre-industrial Parameter Fitting ✅ COMPLETED
 Fit the parameters of a Solow-Swan growth model to the results of a pre-industrial climate model simulation, assuming that the system does not respond at all to climate change.
 
-**Parameters to fit:**
+**Parameters fitted:**
 - Ksoil_0 (specified a priori)
 - Kresp_0 (plant respiration fraction)
 - Ktfp_0 (total factor productivity)
@@ -35,18 +35,29 @@ Fit the parameters of a Solow-Swan growth model to the results of a pre-industri
 **Climate sensitivity parameters set to zero:**
 - Ksoil_tas, Ksoil_pr, Kresp_tas, Kresp_pr, Ktfp_tas, Ktfp_pr = 0
 
-**Variant:** We might want to try fitting some or all of the climate sensitivity parameters at this stage.
+**Data used:** piControl simulation data
 
-### Step 2: CO2 Fertilization Effect (Planned)
+### Step 2: CO2 Fertilization Effect ✅ COMPLETED
 Use the SSP585bgc simulation (where the biosphere sees the CO2 increase but the physics of the climate system does not) to tune a parameter, **Ktfp_co2**, which indicates the sensitivity of Ktfp to CO2 increase.
 
-**New equation for Ktfp:**
-```
-Ktfp = Ktfp_0 * (1 + Ktfp_co2) * ((co2/co2_0) / (Ktfp_co2 + co2/co2_0))
-```
+**Parameters fitted:**
+- Ktfp_co2 (CO2 fertilization sensitivity)
 
-### Step 3: Climate Sensitivity Estimation (Planned)
-Use the SSP585 simulation to estimate some or all of the following climate sensitivity factors:
+**Parameters from Step 1 used as starting values:**
+- Ksoil_0, Kresp_0, Ktfp_0, alpha
+
+**CO2-dependent Ktfp equation:**
+```
+Ktfp = Ktfp_base * (1 + Ktfp_co2) * ((co2/co2_0) / (Ktfp_co2 + co2/co2_0))
+```
+Where co2_0 = 284.318604 ppm (pre-industrial reference concentration)
+
+**Data used:** SSP585bgc simulation data + historical-SSP585 CO2 concentrations
+
+### Step 3: Climate Sensitivity Estimation ✅ COMPLETED
+Use the SSP585 simulation to estimate climate sensitivity parameters for temperature and precipitation effects.
+
+**Parameters fitted:**
 - Ksoil_tas (temperature sensitivity of soil respiration)
 - Ksoil_pr (precipitation sensitivity of soil respiration)
 - Kresp_tas (temperature sensitivity of plant respiration)
@@ -54,63 +65,106 @@ Use the SSP585 simulation to estimate some or all of the following climate sensi
 - Ktfp_tas (temperature sensitivity of total factor productivity)
 - Ktfp_pr (precipitation sensitivity of total factor productivity)
 
+**Parameters from Steps 1-2 used as starting values:**
+- Ksoil_0, Kresp_0, Ktfp_0, alpha, Ktfp_co2
+
+**Data used:** SSP585 simulation data (full climate change scenario)
+
+## Code Architecture
+
+The project has been refactored into a modular structure:
+
+- **`main.py`**: Command-line interface and orchestration
+- **`step_utils.py`**: Shared utilities, BGC simulation, parameter optimization
+- **`step1.py`**: Pre-industrial parameter fitting
+- **`step2.py`**: CO2 fertilization effects
+- **`step3.py`**: Climate sensitivity estimation
+
 ## Features
+- **Multi-step analysis**: Sequential parameter fitting with inheritance between steps
 - **Multi-region processing**: Run simulations for all countries and models
 - **Smart parameter optimization**: Only optimize parameters not provided by user
 - **Batch processing**: Process multiple regions/models with single command
-- **Uncertainty estimation**: Standard errors for all fitted parameters
-- **Flexible parameter specification**: Mix user-provided and optimized parameters
-- **Comprehensive output**: Single CSV file with all fitted parameters
+- **CO2 integration**: Historical and future CO2 concentration data support
+- **Climate sensitivity**: Temperature and precipitation effects on all parameters
+- **Comprehensive output**: Timestamped CSV files with all fitted parameters
+- **Virtual environment**: Isolated Python environment for dependencies
 
 ## Getting Started
-1. Install requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
 
-2. Run for all regions and models:
-   ```bash
-   python main.py
-   ```
+### 1. Setup Virtual Environment
+```bash
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-3. Run for specific regions:
-   ```bash
-   python main.py --regions "Zimbabwe" "Zambia" --models "ACCESS-ESM1-5"
-   ```
+# Install dependencies
+pip install -r requirements.txt
+```
 
-4. Run with fixed parameters:
-   ```bash
-   python main.py --Ksoil_0 0.05 --regions "Zimbabwe" "Zambia"
-   ```
+### 2. Run Individual Steps
+```bash
+# Step 1: Pre-industrial parameter fitting
+python main.py --step step1 --region "Zimbabwe" --model "ACCESS-ESM1-5"
+
+# Step 2: CO2 fertilization effects
+python main.py --step step2 --region "Zimbabwe" --model "ACCESS-ESM1-5"
+
+# Step 3: Climate sensitivity estimation
+python main.py --step step3 --region "Zimbabwe" --model "ACCESS-ESM1-5"
+```
+
+### 3. Run Complete Analysis
+```bash
+# Run all steps sequentially
+python main.py --step all --region "Zimbabwe" --model "ACCESS-ESM1-5"
+
+# Run for multiple regions
+python main.py --step all --regions "Zimbabwe" "Zambia" --models "ACCESS-ESM1-5"
+```
+
+### 4. Run with Fixed Parameters
+```bash
+# Fix specific parameters for any step
+python main.py --step step1 --Ksoil_0 0.05 --region "Zimbabwe"
+python main.py --step step2 --Ktfp_co2 0.1 --region "Zimbabwe"
+```
 
 ## Input Data
 Place your input CSV files in `data/input/`. The project uses:
 - `Data_regression_piControl.csv` - Pre-industrial control data (Step 1)
 - `Data_regression_ssp585bgc.csv` - SSP585 biogeochemical scenario data (Step 2)
 - `Data_regression_ssp585.csv` - SSP585 scenario data (Step 3)
+- `historical-ssp585_co2.csv` - Historical and future CO2 concentrations (Steps 2-3)
 
 ## Output Files
-The model generates output files in `data/output/`:
-- `fitted_parameters_all_step1_YYYYMMDD_HHMMSS.csv` - All fitted parameters in single file
-- `simulation_results_{region}_{model}_step1_YYYYMMDD_HHMMSS.csv` - Individual simulation results
+The model generates timestamped output files in `data/output/`:
+- `fitted_parameters_all_step1_YYYYMMDD_HHMMSS.csv` - Step 1 fitted parameters
+- `fitted_parameters_all_step2_YYYYMMDD_HHMMSS.csv` - Step 2 fitted parameters (including Ktfp_co2)
+- `fitted_parameters_all_step3_YYYYMMDD_HHMMSS.csv` - Step 3 fitted parameters (including climate sensitivities)
+- `simulation_results_{region}_{model}_step{N}_YYYYMMDD_HHMMSS.csv` - Individual simulation results
 
 ## Current Status
-- **Step 1**: ✅ Complete - Pre-industrial parameter fitting with uncertainty estimation
-- **Step 2**: 🔄 Planned - CO2 fertilization effect estimation
-- **Step 3**: 🔄 Planned - Climate sensitivity parameter estimation
+- **Step 1**: ✅ **COMPLETED** - Pre-industrial parameter fitting with uncertainty estimation
+- **Step 2**: ✅ **COMPLETED** - CO2 fertilization effect estimation with historical-SSP585 CO2 data
+- **Step 3**: ✅ **COMPLETED** - Climate sensitivity parameter estimation
+- **Code Refactoring**: ✅ **COMPLETED** - Modular architecture with step-specific modules
+- **Virtual Environment**: ✅ **COMPLETED** - Isolated Python environment with all dependencies
 
 ## Command Line Options
+- `--step`: Specify step to run ("step1", "step2", "step3", "all")
 - `--region` / `--regions`: Specify single region or list of regions
 - `--model` / `--models`: Specify single model or list of models
 - `--Ksoil_0`, `--Kresp_0`, `--Ktfp_0`, `--alpha`: Fix specific parameters
+- `--Ktfp_co2`: Fix CO2 fertilization parameter
 - `--Ksoil_tas`, `--Ksoil_pr`, etc.: Set climate sensitivity parameters
 
 ## Dependencies
-- pandas - Data manipulation and analysis
-- numpy - Numerical operations
-- scikit-learn - Machine learning utilities
-- statsmodels - Statistical modeling
-- scipy - Scientific computing and optimization
+- pandas==2.0.3 - Data manipulation and analysis
+- numpy==1.24.4 - Numerical operations
+- scipy==1.10.1 - Scientific computing and optimization
+- scikit-learn==1.3.2 - Machine learning utilities
+- statsmodels==0.14.1 - Statistical modeling
 
 ## License
 MIT License 

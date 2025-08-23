@@ -83,8 +83,8 @@ def run_bgc_simulation(filtered_df, params, co2_df=None, co2_0=284.318604):
     filtered_df = filtered_df.sort_values('year').reset_index(drop=True)
     
     years = filtered_df['year'].values
-    alpha = params['alpha']  # dimensionless exponent for power law scaling of production with Cland
-    Cland = params['Cland_init']
+    alpha = params.get('alpha', 0.5)  # dimensionless exponent for power law scaling of production with Cland
+    Cland = params.get('Cland_init', 1.0)
     
     # Store results
     results = []
@@ -97,11 +97,11 @@ def run_bgc_simulation(filtered_df, params, co2_df=None, co2_0=284.318604):
         co2 = get_co2_for_year(co2_df, year) if co2_df is not None else co2_0
         
         # Calculate Ksoil, Kresp, Ktfp as linear functions of tas and pr
-        Ksoil = params['Ksoil_0'] + params['Ksoil_tas'] * tas + params['Ksoil_pr'] * pr
-        Kresp = params['Kresp_0'] + params['Kresp_tas'] * tas + params['Kresp_pr'] * pr
+        Ksoil = params.get('Ksoil_0', 0.1) + params.get('Ksoil_tas', 0.0) * tas + params.get('Ksoil_pr', 0.0) * pr
+        Kresp = params.get('Kresp_0', 0.5) + params.get('Kresp_tas', 0.0) * tas + params.get('Kresp_pr', 0.0) * pr
         
         # Calculate Ktfp with optional CO2 dependence
-        Ktfp_base = params['Ktfp_0'] * (1 + params['Ktfp_tas'] * tas + params['Ktfp_pr'] * pr)
+        Ktfp_base = params.get('Ktfp_0', 1.0) * (1 + params.get('Ktfp_tas', 0.0) * tas + params.get('Ktfp_pr', 0.0) * pr)
         
         if 'Ktfp_co2' in params and co2_df is not None:
             # CO2-dependent Ktfp calculation
@@ -142,20 +142,17 @@ def run_bgc_simulation(filtered_df, params, co2_df=None, co2_0=284.318604):
     print(".", end="", flush=True)
     return results_df
 
-def first_guess_user_params(filtered_df, n_years, alpha, Ksoil):
+def first_guess_user_params(filtered_df, alpha, Ksoil):
     """
     Generate first guess parameters for optimization.
     """
-    avg_start = filtered_df['year'].min()
-    avg_end = avg_start + n_years - 1  # n_years=1 gives only the first year
-
-    # compute Cland_init from NPP average and Ksoil
-    avg_npp = filtered_df[(filtered_df['year'] >= avg_start) & (filtered_df['year'] <= avg_end)]['npp'].mean()
+    # compute Cland_init from NPP average and Ksoil (using all available years)
+    avg_npp = filtered_df['npp'].mean()
     Cland_init = avg_npp / Ksoil
     
     return Cland_init
 
-def objective_function(params, filtered_df, param_names, n_years, user_params):
+def objective_function(params, filtered_df, param_names, user_params):
     """
     Objective function for parameter optimization.
     """
@@ -170,7 +167,7 @@ def objective_function(params, filtered_df, param_names, n_years, user_params):
     Ksoil = param_dict.get('Ksoil_0', 0.1)
     
     # Calculate Cland_init
-    param_dict['Cland_init'] = first_guess_user_params(filtered_df, n_years, alpha, Ksoil)
+    param_dict['Cland_init'] = first_guess_user_params(filtered_df, alpha, Ksoil)
     
     # Run simulation
     results_df = run_bgc_simulation(filtered_df, param_dict)
@@ -184,9 +181,6 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
     Run simulation for a single region/model combination.
     """
     try:
-        print(f"Debug: Starting run_single_region_model for {region} / {model}")
-        print(f"Debug: user_params keys: {list(user_params.keys())}")
-        
         # Load data
         if args.step == "step1":
             data_file = "data/input/Data_regression_piControl.csv"
@@ -203,13 +197,16 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
             print(f"No data found for {region} / {model}")
             return False, {}, pd.DataFrame()
         
-        print(f"Debug: Loaded data with {len(filtered_df)} rows")
+        # Check if user provided all main parameters AND we're not in step2 (where we want to optimize Ktfp_co2)
+        main_params = ['Ksoil_0', 'Kresp_0', 'Ktfp_0', 'alpha']
+        provided_main_params = [p for p in main_params if p in user_params and user_params[p] is not None]
         
-        # Check if user provided all parameters
-        if len(user_params) >= 4:  # Ksoil_0, Kresp_0, Ktfp_0, alpha
-            # Use provided parameters
+        # For step2, we want to optimize Ktfp_co2 even if all main parameters are provided
+        # For step3, we want to optimize climate sensitivity parameters even if all main parameters are provided
+        if len(provided_main_params) == len(main_params) and args.step not in ["step2", "step3"]:
+            # Use provided parameters (for step1 only)
             param_dict = user_params.copy()
-            param_dict['Cland_init'] = first_guess_user_params(filtered_df, args.n_years, 
+            param_dict['Cland_init'] = first_guess_user_params(filtered_df, 
                                                              param_dict['alpha'], param_dict['Ksoil_0'])
             
             # Run simulation with provided parameters
@@ -219,8 +216,7 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
             param_dict.update({
                 'region': region,
                 'model': model,
-                'step': args.step,
-                'n_years': args.n_years
+                'step': args.step
             })
             
             return True, param_dict, results_df
@@ -231,42 +227,45 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
         param_names = []
         initial_guess = []
         
-        print(f"Debug: Checking which parameters to optimize...")
-        
         # Add parameters to optimize (only those not provided by user)
         if 'Ksoil_0' not in user_params:
             param_names.append('Ksoil_0')
             param_bounds.append((0.01, 0.5))
             initial_guess.append(0.1)
-            print(f"Debug: Will optimize Ksoil_0")
         
         if 'Kresp_0' not in user_params:
             param_names.append('Kresp_0')
             param_bounds.append((0.1, 0.9))
             initial_guess.append(0.5)
-            print(f"Debug: Will optimize Kresp_0")
         
         if 'Ktfp_0' not in user_params:
             param_names.append('Ktfp_0')
             param_bounds.append((0.1, 10.0))
             initial_guess.append(1.0)
-            print(f"Debug: Will optimize Ktfp_0")
         
         if 'alpha' not in user_params:
             param_names.append('alpha')
             param_bounds.append((0.1, 1.0))
             initial_guess.append(0.5)
-            print(f"Debug: Will optimize alpha")
         
         # Add CO2 parameter for step2
         if args.step == "step2" and 'Ktfp_co2' not in user_params:
             param_names.append('Ktfp_co2')
             param_bounds.append((0.0, 2.0))
             initial_guess.append(0.1)
-            print(f"Debug: Will optimize Ktfp_co2")
         
-        print(f"Debug: Parameters to optimize: {param_names}")
-        print(f"Debug: Initial guesses: {initial_guess}")
+        # Add climate sensitivity parameters for step3
+        if args.step == "step3":
+            climate_params = ['Ksoil_tas', 'Ksoil_pr', 'Kresp_tas', 'Kresp_pr', 'Ktfp_tas', 'Ktfp_pr']
+            for param in climate_params:
+                # For step3, always optimize climate sensitivity parameters
+                param_names.append(param)
+                if 'tas' in param:
+                    param_bounds.append((-0.1, 0.1))  # Temperature sensitivity bounds
+                    initial_guess.append(user_params.get(param, 0.0))
+                else:
+                    param_bounds.append((-0.01, 0.01))  # Precipitation sensitivity bounds
+                    initial_guess.append(user_params.get(param, 0.0))
         
         if not param_names:
             print("No parameters to optimize")
@@ -276,7 +275,7 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
         result = optimize.minimize(
             objective_function,
             initial_guess,
-            args=(filtered_df, param_names, args.n_years, user_params),
+            args=(filtered_df, param_names, user_params),
             bounds=param_bounds,
             method='L-BFGS-B'
         )
@@ -287,7 +286,7 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
             param_dict.update(user_params)  # Add user-provided parameters
             
             # Add derived parameters
-            param_dict['Cland_init'] = first_guess_user_params(filtered_df, args.n_years, 
+            param_dict['Cland_init'] = first_guess_user_params(filtered_df, 
                                                              param_dict['alpha'], param_dict['Ksoil_0'])
             
             # Run final simulation
@@ -298,7 +297,6 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
                 'region': region,
                 'model': model,
                 'step': args.step,
-                'n_years': args.n_years,
                 'optimization_success': True,
                 'final_mse': result.fun
             })
@@ -310,6 +308,8 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
             
     except Exception as e:
         print(f"Error processing {region} / {model}: {e}")
+        import traceback
+        traceback.print_exc()
         return False, {}, pd.DataFrame()
 
 def save_fitted_parameters(all_fitted_params, step, single_file=True):

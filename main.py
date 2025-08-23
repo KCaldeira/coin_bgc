@@ -189,8 +189,7 @@ def parse_command_line_args():
                        help='List of specific regions to run (overrides --region)')
     parser.add_argument('--models', type=str, nargs='+', default=None,
                        help='List of specific models to run (overrides --model)')
-    parser.add_argument('--n_years', type=int, default=1,
-                       help='Number of years for parameter estimation')
+
     
     # Model parameters (optional - will use optimization if not provided)
     parser.add_argument('--Ksoil_0', type=float, default=None,
