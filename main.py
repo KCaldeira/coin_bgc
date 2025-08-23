@@ -221,8 +221,8 @@ def parse_command_line_args():
     # Output options
     parser.add_argument('--output-dir', type=str, default='data/output',
                        help='Output directory for results')
-    parser.add_argument('--step', type=str, default='step1',
-                       help='Analysis step to run: step1, step2, step3, or all')
+    parser.add_argument('--step', type=str, default='all',
+                       help='Analysis step to run: step1, step2, step3, or all (default: all)')
     
     return parser.parse_args()
 

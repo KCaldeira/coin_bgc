@@ -57,7 +57,12 @@ def get_output_filename(base_name, region, model, step="step1", extension=".csv"
     """
     Generate a standardized output filename with timestamp.
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Ensure the run timestamp is set
+    if _current_run_timestamp is None:
+        get_run_output_directory()
+    
+    # Use the run timestamp instead of generating a new one
+    timestamp = _current_run_timestamp
     return f"{base_name}_{region}_{model}_{step}_{timestamp}{extension}"
 
 def load_and_filter_data(filepath, region, model):
@@ -233,10 +238,13 @@ def objective_function(params, filtered_df, param_names, user_params):
     param_dict['Cland_init'] = first_guess_user_params(filtered_df, alpha, Ksoil)
     
     # Run simulation
-    results_df = run_bgc_simulation(filtered_df, param_dict)
+    # Note: co2_df is not available in objective_function, so we need to pass it through user_params
+    co2_df = user_params.get('_co2_df', None)
+    results_df = run_bgc_simulation(filtered_df, param_dict, co2_df)
     
     # Calculate error (MSE between simulated and observed NPP)
     mse = np.mean((results_df['NPP'] - results_df['npp_data'])**2)
+    
     return mse
 
 def run_single_region_model(region, model, args, user_params, co2_df=None):
@@ -244,7 +252,8 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
     Run simulation for a single region/model combination.
     """
     try:
-        # Load data
+        # Load data and determine actual step
+        actual_step = args.step
         if args.step == "step1":
             data_file = "data/input/Data_regression_piControl.csv"
             filtered_df = load_and_filter_data(data_file, region, model)
@@ -254,6 +263,11 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
         elif args.step == "step3":
             data_file = "data/input/Data_regression_ssp585.csv"
             filtered_df = load_and_filter_data(data_file, region, model)
+        elif args.step == "all":
+            # For "all", determine step based on data file or context
+            # This will be determined by the calling function
+            data_file = "data/input/Data_regression_piControl.csv"  # default
+            filtered_df = load_and_filter_data(data_file, region, model)
         else:
             data_file = "data/input/Data_regression_piControl.csv"  # default
             filtered_df = load_and_filter_data(data_file, region, model)
@@ -262,13 +276,15 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
             print(f"No data found for {region} / {model}")
             return False, {}, pd.DataFrame()
         
-        # Check if user provided all main parameters AND we're not in step2 (where we want to optimize Ktfp_co2)
+        # Check if user provided all main parameters AND we're not in step2 or step3 (where we want to optimize additional parameters)
         main_params = ['Ksoil_0', 'Kresp_0', 'Ktfp_0', 'alpha']
         provided_main_params = [p for p in main_params if p in user_params and user_params[p] is not None]
         
+
+        
         # For step2, we want to optimize Ktfp_co2 even if all main parameters are provided
         # For step3, we want to optimize climate sensitivity parameters even if all main parameters are provided
-        if len(provided_main_params) == len(main_params) and args.step not in ["step2", "step3"]:
+        if len(provided_main_params) == len(main_params) and args.step == "step1":
             # Use provided parameters (for step1 only)
             param_dict = user_params.copy()
             param_dict['Cland_init'] = first_guess_user_params(filtered_df, 
@@ -336,6 +352,10 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
             print("No parameters to optimize")
             return False, {}, pd.DataFrame()
         
+        # Add CO2 data to user_params for objective function
+        if co2_df is not None:
+            user_params['_co2_df'] = co2_df
+        
         # Run optimization
         result = optimize.minimize(
             objective_function,
@@ -385,7 +405,12 @@ def save_fitted_parameters(all_fitted_params, step, single_file=True):
         return
     
     output_dir = get_run_output_directory()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Ensure the run timestamp is set
+    if _current_run_timestamp is None:
+        get_run_output_directory()
+    
+    # Use the run timestamp instead of generating a new one
+    timestamp = _current_run_timestamp
     
     # Define standardized column order
     # Alphanumeric columns first, then final_mse, then all parameters

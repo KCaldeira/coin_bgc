@@ -84,7 +84,7 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
                 all_fitted_params.append(params_dict)
                 
                 # Save individual simulation results
-                results_filename = get_output_filename("simulation_results", region, model, args.step)
+                results_filename = get_output_filename("simulation_results", region, model, "step1")
                 results_filepath = os.path.join(get_run_output_directory(), results_filename)
                 results_df.to_csv(results_filepath, index=False)
                 print(f"Simulation results saved to {results_filepath}")
@@ -94,7 +94,7 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
     
     # Save all fitted parameters to a single file
     if all_fitted_params:
-        save_fitted_parameters(all_fitted_params, args.step, single_file=True)
+        save_fitted_parameters(all_fitted_params, "step1", single_file=True)
     
     print(f"\n=== Step 1 Summary ===")
     print(f"Successful runs: {successful_runs}")

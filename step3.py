@@ -12,7 +12,7 @@ from step_utils import (
     save_fitted_parameters, load_co2_data
 )
 
-def run_step3_analysis(args, regions_to_run, models_to_run, step1_params=None, step2_params=None):
+def run_step3_analysis(args, regions_to_run, models_to_run, step1_params=None, step2_params=None, actual_step="step3"):
     """
     Step 3: Climate sensitivity estimation using SSP585 data.
     
@@ -127,15 +127,20 @@ def run_step3_analysis(args, regions_to_run, models_to_run, step1_params=None, s
                 })
                 print(f"Using Step 2 parameters for {region} / {model}")
             
+            # Create a modified args object with the correct step
+            import copy
+            modified_args = copy.deepcopy(args)
+            modified_args.step = actual_step
+            
             # Run simulation for this region/model with CO2 data
-            success, params_dict, results_df = run_single_region_model(region, model, args, step_params, co2_df=co2_df)
+            success, params_dict, results_df = run_single_region_model(region, model, modified_args, step_params, co2_df=co2_df)
             
             if success:
                 successful_runs += 1
                 all_fitted_params.append(params_dict)
                 
                 # Save individual simulation results
-                results_filename = get_output_filename("simulation_results", region, model, args.step)
+                results_filename = get_output_filename("simulation_results", region, model, actual_step)
                 results_filepath = os.path.join(get_run_output_directory(), results_filename)
                 results_df.to_csv(results_filepath, index=False)
                 print(f"Simulation results saved to {results_filepath}")
@@ -155,7 +160,7 @@ def run_step3_analysis(args, regions_to_run, models_to_run, step1_params=None, s
     
     # Save all fitted parameters to a single file
     if all_fitted_params:
-        save_fitted_parameters(all_fitted_params, args.step, single_file=True)
+        save_fitted_parameters(all_fitted_params, actual_step, single_file=True)
     
     print(f"\n=== Step 3 Summary ===")
     print(f"Successful runs: {successful_runs}")
