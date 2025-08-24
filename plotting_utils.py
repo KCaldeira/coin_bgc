@@ -153,7 +153,7 @@ def create_step3_vs_step4_book(output_dir):
     
     Each panel shows:
     - GPP_data_Step3 (blue line, linewidth=2)
-    - GPP_data_Step4 (red line, linewidth=3)
+    - GPP_data_Step4 (red line, linewidth=2)
     - GPP_model_Step3 (fine blue line)
     - GPP_model_Step4 (fine red line)
     """
@@ -225,7 +225,7 @@ def create_step3_vs_step4_book(output_dir):
             
             # Plot GPP data and models
             ax.plot(df3['year'], df3['gpp_data'], 'b-', linewidth=2, label='GPP Data (Step 3)', alpha=0.8)
-            ax.plot(df4['year'], df4['gpp_data'], 'r-', linewidth=3, label='GPP Data (Step 4)', alpha=0.8)
+            ax.plot(df4['year'], df4['gpp_data'], 'r-', linewidth=2, label='GPP Data (Step 4)', alpha=0.8)
             ax.plot(df3['year'], df3['GPP'], 'b-', linewidth=1, label='GPP Model (Step 3)', alpha=0.6)
             ax.plot(df4['year'], df4['GPP'], 'r-', linewidth=1, label='GPP Model (Step 4)', alpha=0.6)
             
