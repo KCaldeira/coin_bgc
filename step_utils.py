@@ -53,17 +53,32 @@ def reset_run_timestamp():
     global _current_run_timestamp
     _current_run_timestamp = None
 
+def get_most_recent_output_directory():
+    """
+    Find the most recent timestamped output directory.
+    Returns the path to the most recent run directory, or None if none exist.
+    """
+    base_output_dir = setup_output_directory()
+    
+    # Find all run directories
+    run_dirs = []
+    for item in os.listdir(base_output_dir):
+        item_path = os.path.join(base_output_dir, item)
+        if os.path.isdir(item_path) and item.startswith("run_"):
+            run_dirs.append(item_path)
+    
+    if not run_dirs:
+        return None
+    
+    # Sort by creation time (most recent first)
+    run_dirs.sort(key=lambda x: os.path.getctime(x), reverse=True)
+    return run_dirs[0]
+
 def get_output_filename(base_name, region, model, step="step1", extension=".csv"):
     """
-    Generate a standardized output filename with timestamp.
+    Generate a standardized output filename without timestamp.
     """
-    # Ensure the run timestamp is set
-    if _current_run_timestamp is None:
-        get_run_output_directory()
-    
-    # Use the run timestamp instead of generating a new one
-    timestamp = _current_run_timestamp
-    return f"{base_name}_{region}_{model}_{step}_{timestamp}{extension}"
+    return f"{base_name}_{region}_{model}_{step}{extension}"
 
 def load_and_filter_data(filepath, region, model):
     """
@@ -600,6 +615,10 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
             - results_df (pd.DataFrame): Simulation results
             - optimization_info (dict): Optimization details (iterations, final MSE, etc.)
     """
+    print(f"DEBUG: Fixed parameters dictionary keys: {list(fixed_params.keys())}")
+    print(f"DEBUG: Fixed parameters values: {fixed_params}")
+    print(f"DEBUG: Parameters to optimize: {params_to_optimize}")
+    print(f"DEBUG: Total parameters being handled: {len(fixed_params) + len(params_to_optimize)}")
     try:
         if data_df.empty:
             print("ERROR: data_df is empty")
@@ -822,6 +841,36 @@ def get_available_regions_and_models():
         print(f"Error reading data file: {e}")
         return [], []
 
+def load_step_parameters_from_file(filepath):
+    """
+    Load parameters from a step output file.
+    
+    Args:
+        filepath: Path to step fitted parameters file
+    
+    Returns:
+        dict: Dictionary with (region, model) as keys and parameter dict as values
+    """
+    try:
+        if not os.path.exists(filepath):
+            print(f"Step output file not found: {filepath}")
+            return {}
+        
+        step_df = pd.read_csv(filepath)
+        step_params = {}
+        
+        for _, row in step_df.iterrows():
+            region = row['region']
+            model = row['model']
+            step_params[(region, model)] = row.to_dict()
+        
+        print(f"Loaded step parameters for {len(step_params)} region/model combinations from {filepath}")
+        return step_params
+        
+    except Exception as e:
+        print(f"Error loading step parameters: {e}")
+        return {}
+
 def run_single_region_model_clean(region, model, step, fixed_params, params_to_optimize, co2_df=None):
     """
     Run simulation for a single region/model combination using the clean parameter approach.
@@ -846,6 +895,9 @@ def run_single_region_model_clean(region, model, step, fixed_params, params_to_o
             filtered_df = load_and_filter_data_step2(region, model)
         elif step == "step3":
             filtered_df = load_and_filter_data_step3(region, model)
+        elif step == "step4":
+            # Step 4 uses the same data as Step 2 (CO2 fertilization data) for validation
+            filtered_df = load_and_filter_data_step2(region, model)
         else:
             print(f"ERROR: Unknown step '{step}'")
             return False, {}, pd.DataFrame(), {}

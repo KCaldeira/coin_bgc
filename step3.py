@@ -71,74 +71,50 @@ def run_step3_analysis(args, regions_to_run, models_to_run, step1_params=None, s
     fixed_params = {}
     params_to_optimize = []
     
-    # Check main parameters
+    # For Step 3, we should inherit Step 1 and Step 2 parameters and only optimize climate sensitivity parameters
+    # Only add user-provided parameters to fixed_params if explicitly given
+    
+    # Check main parameters (only if explicitly provided by user)
     if args.Ksoil_0 is not None:
         fixed_params['Ksoil_0'] = args.Ksoil_0
         print(f"Using provided Ksoil_0: {args.Ksoil_0}")
-    else:
-        params_to_optimize.append('Ksoil_0')
         
     if args.Kresp_0 is not None:
         fixed_params['Kresp_0'] = args.Kresp_0
         print(f"Using provided Kresp_0: {args.Kresp_0}")
-    else:
-        params_to_optimize.append('Kresp_0')
         
     if args.Ktfp_0 is not None:
         fixed_params['Ktfp_0'] = args.Ktfp_0
         print(f"Using provided Ktfp_0: {args.Ktfp_0}")
-    else:
-        params_to_optimize.append('Ktfp_0')
         
     if args.alpha is not None:
         fixed_params['alpha'] = args.alpha
         print(f"Using provided alpha: {args.alpha}")
-    else:
-        params_to_optimize.append('alpha')
     
-    # Check CO2 parameter
+    # Check CO2 parameter (only if explicitly provided by user)
     if args.Ktfp_co2 is not None:
         fixed_params['Ktfp_co2'] = args.Ktfp_co2
         print(f"Using provided Ktfp_co2: {args.Ktfp_co2}")
-    else:
-        params_to_optimize.append('Ktfp_co2')
     
-    # Check climate sensitivity parameters
+    # Check climate sensitivity parameters (only if explicitly provided by user)
     if args.Ksoil_tas is not None:
         fixed_params['Ksoil_tas'] = args.Ksoil_tas
         print(f"Using provided Ksoil_tas: {args.Ksoil_tas}")
-    else:
-        params_to_optimize.append('Ksoil_tas')
-        
     if args.Ksoil_pr is not None:
         fixed_params['Ksoil_pr'] = args.Ksoil_pr
         print(f"Using provided Ksoil_pr: {args.Ksoil_pr}")
-    else:
-        params_to_optimize.append('Ksoil_pr')
-        
     if args.Kresp_tas is not None:
         fixed_params['Kresp_tas'] = args.Kresp_tas
         print(f"Using provided Kresp_tas: {args.Kresp_tas}")
-    else:
-        params_to_optimize.append('Kresp_tas')
-        
     if args.Kresp_pr is not None:
         fixed_params['Kresp_pr'] = args.Kresp_pr
         print(f"Using provided Kresp_pr: {args.Kresp_pr}")
-    else:
-        params_to_optimize.append('Kresp_pr')
-        
     if args.Ktfp_tas is not None:
         fixed_params['Ktfp_tas'] = args.Ktfp_tas
         print(f"Using provided Ktfp_tas: {args.Ktfp_tas}")
-    else:
-        params_to_optimize.append('Ktfp_tas')
-        
     if args.Ktfp_pr is not None:
         fixed_params['Ktfp_pr'] = args.Ktfp_pr
         print(f"Using provided Ktfp_pr: {args.Ktfp_pr}")
-    else:
-        params_to_optimize.append('Ktfp_pr')
     
     if params_to_optimize:
         print(f"Running parameter optimization for: {params_to_optimize}")
@@ -180,10 +156,10 @@ def run_step3_analysis(args, regions_to_run, models_to_run, step1_params=None, s
                 })
                 print(f"Using Step 2 parameters for {region} / {model}")
             
-            # Determine which parameters to optimize for this specific region/model
-            # (some might have been provided by previous steps, others by command line)
+            # For Step 3, we should only optimize climate sensitivity parameters that are not already provided
             region_params_to_optimize = []
-            for param in params_to_optimize:
+            climate_params = ['Ksoil_tas', 'Ksoil_pr', 'Kresp_tas', 'Kresp_pr', 'Ktfp_tas', 'Ktfp_pr']
+            for param in climate_params:
                 if param not in step_params:
                     region_params_to_optimize.append(param)
             

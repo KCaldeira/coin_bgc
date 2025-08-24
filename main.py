@@ -8,7 +8,9 @@ import argparse
 from step1 import run_step1_analysis
 from step2 import run_step2_analysis, load_step1_parameters
 from step3 import run_step3_analysis, load_step_parameters
-from step_utils import get_available_regions_and_models
+from step4 import run_step4_analysis
+from step_utils import get_available_regions_and_models, load_step_parameters_from_file
+from plotting_utils import create_all_books
 
 def run_complete_analysis(args, step):
     """
@@ -59,37 +61,117 @@ def run_complete_analysis(args, step):
         if step1_files:
             latest_step1 = sorted(step1_files)[-1]
             step1_filepath = os.path.join("data/output", latest_step1)
-            step1_params = load_step_parameters(step1_filepath)
+            step1_params = load_step_parameters_from_file(step1_filepath)
         
         if step2_files:
             latest_step2 = sorted(step2_files)[-1]
             step2_filepath = os.path.join("data/output", latest_step2)
-            step2_params = load_step_parameters(step2_filepath)
+            step2_params = load_step_parameters_from_file(step2_filepath)
         
         all_fitted_params, successful_runs, failed_runs = run_step3_analysis(args, regions_to_run, models_to_run, step1_params, step2_params)
+    elif step == "step4":
+        # Try to load Step 1, Step 2, and Step 3 parameters if available
+        step1_params = {}
+        step2_params = {}
+        step3_params = {}
+        
+        # Search for Step 1 files in main output directory
+        step1_files = [f for f in os.listdir("data/output") if f.startswith("fitted_parameters_all_step1_")]
+        
+        # Search for Step 2 files in main output directory  
+        step2_files = [f for f in os.listdir("data/output") if f.startswith("fitted_parameters_all_step2_")]
+        
+        # Search for Step 3 files in timestamped subdirectories
+        step3_files = []
+        for subdir in os.listdir("data/output"):
+            subdir_path = os.path.join("data/output", subdir)
+            if os.path.isdir(subdir_path) and subdir.startswith("run_"):
+                step3_files_in_subdir = [f for f in os.listdir(subdir_path) if f.startswith("fitted_parameters_all_step3_")]
+                step3_files.extend([os.path.join(subdir, f) for f in step3_files_in_subdir])
+        
+        if step1_files:
+            latest_step1 = sorted(step1_files)[-1]
+            step1_filepath = os.path.join("data/output", latest_step1)
+            step1_params = load_step_parameters_from_file(step1_filepath)
+        
+        if step2_files:
+            latest_step2 = sorted(step2_files)[-1]
+            step2_filepath = os.path.join("data/output", latest_step2)
+            step2_params = load_step_parameters_from_file(step2_filepath)
+        
+        if step3_files:
+            latest_step3 = sorted(step3_files)[-1]
+            step3_filepath = os.path.join("data/output", latest_step3)
+            step3_params = load_step_parameters_from_file(step3_filepath)
+        
+        all_fitted_params, successful_runs, failed_runs = run_step4_analysis(args, regions_to_run, models_to_run, step1_params, step2_params, step3_params)
     elif step == "all":
         print("Running all steps sequentially...")
         
         # Step 1
         print("\n" + "="*50)
-        all_fitted_params, successful_runs, failed_runs = run_step1_analysis(args, regions_to_run, models_to_run)
+        step1_results, step1_success, step1_failed = run_step1_analysis(args, regions_to_run, models_to_run)
+        
+        # Convert Step 1 results to the expected format for Step 2
+        step1_params = {}
+        if step1_results:
+            for param_dict in step1_results:
+                region = param_dict['region']
+                model = param_dict['model']
+                step1_params[(region, model)] = param_dict
         
         # Step 2
         print("\n" + "="*50)
-        step1_params = {}
-        if all_fitted_params:
-            # Convert list of dicts to (region, model) keyed dict
-            step1_params = {(p['region'], p['model']): p for p in all_fitted_params}
+        step2_results, step2_success, step2_failed = run_step2_analysis(args, regions_to_run, models_to_run, step1_params)
         
-        all_fitted_params, successful_runs, failed_runs = run_step2_analysis(args, regions_to_run, models_to_run, step1_params)
+        # Convert Step 2 results to the expected format for Step 3
+        step2_params = {}
+        if step2_results:
+            for param_dict in step2_results:
+                region = param_dict['region']
+                model = param_dict['model']
+                step2_params[(region, model)] = param_dict
         
         # Step 3
         print("\n" + "="*50)
-        step2_params = {}
-        if all_fitted_params:
-            step2_params = {(p['region'], p['model']): p for p in all_fitted_params}
+        step3_results, step3_success, step3_failed = run_step3_analysis(args, regions_to_run, models_to_run, step1_params, step2_params)
         
-        all_fitted_params, successful_runs, failed_runs = run_step3_analysis(args, regions_to_run, models_to_run, step1_params, step2_params)
+        # Convert Step 3 results to the expected format for Step 4
+        step3_params = {}
+        if step3_results:
+            for param_dict in step3_results:
+                region = param_dict['region']
+                model = param_dict['model']
+                step3_params[(region, model)] = param_dict
+        
+        # Step 4
+        print("\n" + "="*50)
+        step4_results, step4_success, step4_failed = run_step4_analysis(args, regions_to_run, models_to_run, step1_params, step2_params, step3_params)
+        
+        # Use Step 4 results as final output
+        step4_params = step4_results
+        
+        # Summary
+        total_success = step1_success + step2_success + step3_success + step4_success
+        total_failed = step1_failed + step2_failed + step3_failed + step4_failed
+        total_combinations = len(regions_to_run) * len(models_to_run)
+        
+        print("\n" + "="*50)
+        print("=== Final Summary ===")
+        print(f"Total combinations processed: {total_combinations}")
+        print(f"Successful runs: {total_success}")
+        print(f"Failed runs: {total_failed}")
+        print(f"Success rate: {total_success/(total_success+total_failed)*100:.1f}%")
+        print(f"Output directory: {output_dir}")
+        
+        all_fitted_params = step4_params  # Use Step 4 results as final output
+        successful_runs = total_success
+        failed_runs = total_failed
+        
+        # Create PDF books with results
+        print("\n" + "="*50)
+        print("=== Creating PDF Books ===")
+        create_all_books()
     else:
         print(f"Unknown step: {step}")
         return
@@ -222,7 +304,7 @@ def parse_command_line_args():
     parser.add_argument('--output-dir', type=str, default='data/output',
                        help='Output directory for results')
     parser.add_argument('--step', type=str, default='all',
-                       help='Analysis step to run: step1, step2, step3, or all (default: all)')
+                       help='Analysis step to run: step1, step2, step3, step4, or all (default: all)')
     
     return parser.parse_args()
 

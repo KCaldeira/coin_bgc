@@ -6,7 +6,7 @@ This project simulates the behavior of the land-surface model under climate chan
 ## Overall Goal
 The overall goal is to simulate land-surface behavior under climate change using a Solow-Swan growth model. The system is under-determined by one parameter, so **Ksoil_0** (inverse time constant for heterotrophic respiration) is chosen a priori.
 
-## Current State - ALL STEPS COMPLETED ✅
+co## Current State - ALL STEPS COMPLETED ✅
 - **Step 1 COMPLETED**: Pre-industrial parameter fitting using piControl data
 - **Step 2 COMPLETED**: CO2 fertilization effect estimation using SSP585bgc data
 - **Step 3 COMPLETED**: Climate sensitivity parameter estimation using SSP585 data
