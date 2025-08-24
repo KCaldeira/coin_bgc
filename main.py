@@ -283,18 +283,14 @@ def parse_command_line_args():
                        help='CO2 sensitivity of total factor productivity (Step 2 parameter)')
     
     # Climate sensitivity parameters
-    parser.add_argument('--Ksoil_tas', type=float, default=None,
-                       help='Temperature sensitivity of soil respiration (if None, will be optimized)')
-    parser.add_argument('--Ksoil_pr', type=float, default=None,
-                       help='Precipitation sensitivity of soil respiration (if None, will be optimized)')
-    parser.add_argument('--Kresp_tas', type=float, default=None,
-                       help='Temperature sensitivity of plant respiration (if None, will be optimized)')
-    parser.add_argument('--Kresp_pr', type=float, default=None,
-                       help='Precipitation sensitivity of plant respiration (if None, will be optimized)')
-    parser.add_argument('--Ktfp_tas', type=float, default=None,
-                       help='Temperature sensitivity of total factor productivity (if None, will be optimized)')
-    parser.add_argument('--Ktfp_pr', type=float, default=None,
-                       help='Precipitation sensitivity of total factor productivity (if None, will be optimized)')
+    parser.add_argument('--Ktfp_tas0', type=float, default=None,
+                       help='Temperature sensitivity parameter 0 for total factor productivity (if None, will be optimized)')
+    parser.add_argument('--Ktfp_tas1', type=float, default=None,
+                       help='Temperature sensitivity parameter 1 for total factor productivity (if None, will be optimized)')
+    parser.add_argument('--Ktfp_pr0', type=float, default=None,
+                       help='Precipitation sensitivity parameter 0 for total factor productivity (if None, will be optimized)')
+    parser.add_argument('--Ktfp_pr1', type=float, default=None,
+                       help='Precipitation sensitivity parameter 1 for total factor productivity (if None, will be optimized)')
     
     # Output options
     parser.add_argument('--output-dir', type=str, default='data/output',
@@ -320,3 +316,10 @@ if __name__ == "__main__":
     else:
         # Run the complete analysis
         run_complete_analysis(args, args.step)
+        
+        # If running all steps, also create PDF books automatically
+        if args.step == "all":
+            print("\n" + "="*50)
+            print("=== Creating PDF Books ===")
+            from plotting_utils import create_all_books
+            create_all_books()

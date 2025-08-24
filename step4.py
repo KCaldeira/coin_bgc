@@ -49,12 +49,10 @@ def load_step_parameters(step1_params, step2_params, step3_params, region, model
     if step3_params and (region, model) in step3_params:
         step3_param_dict = step3_params[(region, model)]
         combined_params.update({
-            'Ksoil_tas': step3_param_dict.get('Ksoil_tas'),
-            'Ksoil_pr': step3_param_dict.get('Ksoil_pr'),
-            'Kresp_tas': step3_param_dict.get('Kresp_tas'),
-            'Kresp_pr': step3_param_dict.get('Kresp_pr'),
-            'Ktfp_tas': step3_param_dict.get('Ktfp_tas'),
-            'Ktfp_pr': step3_param_dict.get('Ktfp_pr')
+            'Ktfp_tas0': step3_param_dict.get('Ktfp_tas0'),
+            'Ktfp_tas1': step3_param_dict.get('Ktfp_tas1'),
+            'Ktfp_pr0': step3_param_dict.get('Ktfp_pr0'),
+            'Ktfp_pr1': step3_param_dict.get('Ktfp_pr1')
         })
     
     return combined_params
@@ -114,29 +112,20 @@ def run_step4_analysis(args, regions_to_run, models_to_run, step1_params=None, s
         print(f"Using provided Ktfp_co2: {args.Ktfp_co2}")
     
     # Check climate sensitivity parameters
-    if args.Ksoil_tas is not None:
-        fixed_params['Ksoil_tas'] = args.Ksoil_tas
-        print(f"Using provided Ksoil_tas: {args.Ksoil_tas}")
+    if args.Ktfp_tas0 is not None:
+        fixed_params['Ktfp_tas0'] = args.Ktfp_tas0
+        print(f"Using provided Ktfp_tas0: {args.Ktfp_tas0}")
         
-    if args.Ksoil_pr is not None:
-        fixed_params['Ksoil_pr'] = args.Ksoil_pr
-        print(f"Using provided Ksoil_pr: {args.Ksoil_pr}")
+    if args.Ktfp_tas1 is not None:
+        fixed_params['Ktfp_tas1'] = args.Ktfp_tas1
+        print(f"Using provided Ktfp_tas1: {args.Ktfp_tas1}")
         
-    if args.Kresp_tas is not None:
-        fixed_params['Kresp_tas'] = args.Kresp_tas
-        print(f"Using provided Kresp_tas: {args.Kresp_tas}")
-        
-    if args.Kresp_pr is not None:
-        fixed_params['Kresp_pr'] = args.Kresp_pr
-        print(f"Using provided Kresp_pr: {args.Kresp_pr}")
-        
-    if args.Ktfp_tas is not None:
-        fixed_params['Ktfp_tas'] = args.Ktfp_tas
-        print(f"Using provided Ktfp_tas: {args.Ktfp_tas}")
-        
-    if args.Ktfp_pr is not None:
-        fixed_params['Ktfp_pr'] = args.Ktfp_pr
-        print(f"Using provided Ktfp_pr: {args.Ktfp_pr}")
+    if args.Ktfp_pr0 is not None:
+        fixed_params['Ktfp_pr0'] = args.Ktfp_pr0
+        print(f"Using provided Ktfp_pr0: {args.Ktfp_pr0}")
+    if args.Ktfp_pr1 is not None:
+        fixed_params['Ktfp_pr1'] = args.Ktfp_pr1
+        print(f"Using provided Ktfp_pr1: {args.Ktfp_pr1}")
     
     print("Running validation simulation (no optimization)")
     
@@ -180,12 +169,10 @@ def run_step4_analysis(args, regions_to_run, models_to_run, step1_params=None, s
             if step3_params and (region, model) in step3_params:
                 step3_param_dict = step3_params[(region, model)]
                 step_params.update({
-                    'Ksoil_tas': step3_param_dict.get('Ksoil_tas', step_params.get('Ksoil_tas')),
-                    'Ksoil_pr': step3_param_dict.get('Ksoil_pr', step_params.get('Ksoil_pr')),
-                    'Kresp_tas': step3_param_dict.get('Kresp_tas', step_params.get('Kresp_tas')),
-                    'Kresp_pr': step3_param_dict.get('Kresp_pr', step_params.get('Kresp_pr')),
-                    'Ktfp_tas': step3_param_dict.get('Ktfp_tas', step_params.get('Ktfp_tas')),
-                    'Ktfp_pr': step3_param_dict.get('Ktfp_pr', step_params.get('Ktfp_pr'))
+                    'Ktfp_tas0': step3_param_dict.get('Ktfp_tas0', step_params.get('Ktfp_tas0')),
+                    'Ktfp_tas1': step3_param_dict.get('Ktfp_tas1', step_params.get('Ktfp_tas1')),
+                    'Ktfp_pr0': step3_param_dict.get('Ktfp_pr0', step_params.get('Ktfp_pr0')),
+                    'Ktfp_pr1': step3_param_dict.get('Ktfp_pr1', step_params.get('Ktfp_pr1'))
                 })
                 print(f"Using Step 3 parameters (climate sensitivities) for {region} / {model}")
             

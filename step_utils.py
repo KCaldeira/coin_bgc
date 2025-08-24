@@ -334,19 +334,27 @@ def run_bgc_simulation(filtered_df, params, co2_df=None, co2_0=284.318604):
         # Get CO2 concentration for this year
         co2 = get_co2_for_year(co2_df, year) if co2_df is not None else co2_0
         
-        # Calculate Ksoil, Kresp, Ktfp as linear functions of tas and pr
-        Ksoil = params.get('Ksoil_0', 0.1) + params.get('Ksoil_tas', 0.0) * tas + params.get('Ksoil_pr', 0.0) * pr
-        Kresp = params.get('Kresp_0', 0.5) + params.get('Kresp_tas', 0.0) * tas + params.get('Kresp_pr', 0.0) * pr
+        # Calculate Ksoil, Kresp (no climate sensitivity - removed those parameters)
+        Ksoil = params.get('Ksoil_0', 0.1)
+        Kresp = params.get('Kresp_0', 0.5)
         
         # Calculate Ktfp with optional CO2 dependence
         Ktfp_0 = params.get('Ktfp_0', 1.0)
-        Ktfp_base = Ktfp_0 * (1 + params.get('Ktfp_tas', 0.0) * tas + params.get('Ktfp_pr', 0.0) * pr)
-        
+        Ktfp_tas0 = params.get('Ktfp_tas0', 20.57)  # mean temperature (should be initialized from piControl)
+        Ktfp_tas1 = params.get('Ktfp_tas1', 0.0) # linear temperature sensitivity
+        Ktfp_pr0 = params.get('Ktfp_pr0', 3.26)  # mean precipitation (should be initialized from piControl)
+        Ktfp_pr1 = params.get('Ktfp_pr1', 0.0) # linear precipitation sensitivity
+    
+        tas_factor = 1 + Ktfp_tas1 * (tas - Ktfp_tas0) 
+        pr_factor = 1 + Ktfp_pr1 * (pr - Ktfp_pr0)
+
         if 'Ktfp_co2' in params and co2_df is not None:
             # CO2-dependent Ktfp calculation
-            Ktfp = Ktfp_base * (1 + params['Ktfp_co2']) * ((co2/co2_0) / (params['Ktfp_co2'] + co2/co2_0))
+            co2_factor = (1 + params['Ktfp_co2']) * ((co2/co2_0) / (params['Ktfp_co2'] + co2/co2_0))
         else:
-            Ktfp = Ktfp_base
+            co2_factor = 1.0
+
+        Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
         
         GPP = Ktfp * (Cland ** alpha)
         Presp = Kresp * GPP  # plant respiration
@@ -519,19 +527,26 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
         
         # Add climate sensitivity parameters for step3
         if args.step == "step3":
-            climate_params = ['Ksoil_tas', 'Ksoil_pr', 'Kresp_tas', 'Kresp_pr', 'Ktfp_tas', 'Ktfp_pr']
+            climate_params = ['Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_pr0', 'Ktfp_pr1']
             for param in climate_params:
                 # Only optimize climate sensitivity parameters that are not in user_params (i.e., not set to a specific value)
                 if param not in user_params:
                     param_names.append(param)
-                    if 'tas' in param:
-                        param_bounds.append((-0.99, 0.99))  # Temperature sensitivity bounds
-                        # Use non-zero starting values for temperature sensitivity
-                        initial_guess.append(0.1)  # Start with positive temperature sensitivity
+                    if 'tas0' in param or 'pr0' in param:
+                        # Reference values (temperature/precipitation means)
+                        if 'tas0' in param:
+                            param_bounds.append((10.0, 30.0))  # Temperature reference bounds
+                            initial_guess.append(20.57)
+                        else:  # pr0
+                            param_bounds.append((1.0, 10.0))   # Precipitation reference bounds
+                            initial_guess.append(3.26)
                     else:
-                        param_bounds.append((-0.99, 0.99))  # Precipitation sensitivity bounds
-                        # Use non-zero starting values for precipitation sensitivity
-                        initial_guess.append(-0.05)  # Start with negative precipitation sensitivity
+                        # Sensitivity coefficients
+                        param_bounds.append((-0.99, 0.99))  # Sensitivity bounds
+                        if 'tas1' in param:
+                            initial_guess.append(0.1)   # Temperature sensitivity
+                        else:  # pr1
+                            initial_guess.append(-0.05) # Precipitation sensitivity
         
         if not param_names:
             print("No parameters to optimize")
@@ -642,12 +657,10 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
             'Ktfp_0': {'bounds': (0, 10.0), 'initial': 1.0},
             'alpha': {'bounds': (0.1, 1.0), 'initial': 0.5},
             'Ktfp_co2': {'bounds': (0.0, 2000.0), 'initial': 0.1},
-            'Ksoil_tas': {'bounds': (-0.99, 0.99), 'initial': 0.1},
-            'Ksoil_pr': {'bounds': (-0.99, 0.99), 'initial': -0.05},
-            'Kresp_tas': {'bounds': (-0.99, 0.99), 'initial': 0.1},
-            'Kresp_pr': {'bounds': (-0.99, 0.99), 'initial': -0.05},
-            'Ktfp_tas': {'bounds': (-0.99, 0.99), 'initial': 0.1},
-            'Ktfp_pr': {'bounds': (-0.99, 0.99), 'initial': -0.05}
+            'Ktfp_tas0': {'bounds': (10.0, 30.0), 'initial': 20.57},  # Reference temperature (°C)
+            'Ktfp_tas1': {'bounds': (-0.99, 0.99), 'initial': 0.1},   # Temperature sensitivity
+            'Ktfp_pr0': {'bounds': (1.0, 10.0), 'initial': 3.26},     # Reference precipitation (mm/day)
+            'Ktfp_pr1': {'bounds': (-0.99, 0.99), 'initial': -0.05}   # Precipitation sensitivity
         }
         
         # Build optimization lists
@@ -786,7 +799,7 @@ def save_fitted_parameters(all_fitted_params, step, single_file=True):
         'final_mse',  # Then final_mse
         # All parameters in consistent order (Cland_init between alpha and Ktfp_co2)
         'Ksoil_0', 'Kresp_0', 'Ktfp_0', 'alpha', 'Cland_init', 'Ktfp_co2',
-        'Ksoil_tas', 'Ksoil_pr', 'Kresp_tas', 'Kresp_pr', 'Ktfp_tas', 'Ktfp_pr'
+        'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_pr0', 'Ktfp_pr1'
     ]
     
     if single_file:

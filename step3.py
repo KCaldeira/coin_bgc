@@ -97,24 +97,18 @@ def run_step3_analysis(args, regions_to_run, models_to_run, step1_params=None, s
         print(f"Using provided Ktfp_co2: {args.Ktfp_co2}")
     
     # Check climate sensitivity parameters (only if explicitly provided by user)
-    if args.Ksoil_tas is not None:
-        fixed_params['Ksoil_tas'] = args.Ksoil_tas
-        print(f"Using provided Ksoil_tas: {args.Ksoil_tas}")
-    if args.Ksoil_pr is not None:
-        fixed_params['Ksoil_pr'] = args.Ksoil_pr
-        print(f"Using provided Ksoil_pr: {args.Ksoil_pr}")
-    if args.Kresp_tas is not None:
-        fixed_params['Kresp_tas'] = args.Kresp_tas
-        print(f"Using provided Kresp_tas: {args.Kresp_tas}")
-    if args.Kresp_pr is not None:
-        fixed_params['Kresp_pr'] = args.Kresp_pr
-        print(f"Using provided Kresp_pr: {args.Kresp_pr}")
-    if args.Ktfp_tas is not None:
-        fixed_params['Ktfp_tas'] = args.Ktfp_tas
-        print(f"Using provided Ktfp_tas: {args.Ktfp_tas}")
-    if args.Ktfp_pr is not None:
-        fixed_params['Ktfp_pr'] = args.Ktfp_pr
-        print(f"Using provided Ktfp_pr: {args.Ktfp_pr}")
+    if args.Ktfp_tas0 is not None:
+        fixed_params['Ktfp_tas0'] = args.Ktfp_tas0
+        print(f"Using provided Ktfp_tas0: {args.Ktfp_tas0}")
+    if args.Ktfp_tas1 is not None:
+        fixed_params['Ktfp_tas1'] = args.Ktfp_tas1
+        print(f"Using provided Ktfp_tas1: {args.Ktfp_tas1}")
+    if args.Ktfp_pr0 is not None:
+        fixed_params['Ktfp_pr0'] = args.Ktfp_pr0
+        print(f"Using provided Ktfp_pr0: {args.Ktfp_pr0}")
+    if args.Ktfp_pr1 is not None:
+        fixed_params['Ktfp_pr1'] = args.Ktfp_pr1
+        print(f"Using provided Ktfp_pr1: {args.Ktfp_pr1}")
     
     if params_to_optimize:
         print(f"Running parameter optimization for: {params_to_optimize}")
@@ -158,7 +152,7 @@ def run_step3_analysis(args, regions_to_run, models_to_run, step1_params=None, s
             
             # For Step 3, we should only optimize climate sensitivity parameters that are not already provided
             region_params_to_optimize = []
-            climate_params = ['Ksoil_tas', 'Ksoil_pr', 'Kresp_tas', 'Kresp_pr', 'Ktfp_tas', 'Ktfp_pr']
+            climate_params = ['Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_pr0', 'Ktfp_pr1']
             for param in climate_params:
                 if param not in step_params:
                     region_params_to_optimize.append(param)
