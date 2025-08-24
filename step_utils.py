@@ -583,6 +583,168 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
         traceback.print_exc()
         return False, {}, pd.DataFrame()
 
+def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
+    """
+    Optimize parameters for BGC simulation using a clean, explicit approach.
+    
+    Args:
+        fixed_params (dict): Dictionary of parameter names and their fixed values
+        params_to_optimize (list): List of parameter names to optimize
+        data_df (pd.DataFrame): Data for fitting (must contain year, tas, pr, npp columns)
+        co2_df (pd.DataFrame, optional): CO2 concentration data
+    
+    Returns:
+        tuple: (success, optimized_params, results_df, optimization_info)
+            - success (bool): Whether optimization was successful
+            - optimized_params (dict): Complete parameter dictionary with optimized values
+            - results_df (pd.DataFrame): Simulation results
+            - optimization_info (dict): Optimization details (iterations, final MSE, etc.)
+    """
+    try:
+        if data_df.empty:
+            print("ERROR: data_df is empty")
+            return False, {}, pd.DataFrame(), {}
+        
+        # Check for required columns
+        required_columns = ['year', 'tas', 'pr', 'npp']
+        missing_columns = [col for col in required_columns if col not in data_df.columns]
+        if missing_columns:
+            print(f"ERROR: Missing required columns in data_df: {missing_columns}")
+            return False, {}, pd.DataFrame(), {}
+        
+        # Define parameter bounds and initial guesses for optimization
+        param_bounds = []
+        initial_guess = []
+        
+        # Parameter definitions with bounds and initial guesses
+        param_definitions = {
+            'Ksoil_0': {'bounds': (0.01, 0.99), 'initial': 0.1},
+            'Kresp_0': {'bounds': (0.01, 0.99), 'initial': 0.5},
+            'Ktfp_0': {'bounds': (0, 10.0), 'initial': 1.0},
+            'alpha': {'bounds': (0.1, 1.0), 'initial': 0.5},
+            'Ktfp_co2': {'bounds': (0.0, 2000.0), 'initial': 0.1},
+            'Ksoil_tas': {'bounds': (-0.99, 0.99), 'initial': 0.1},
+            'Ksoil_pr': {'bounds': (-0.99, 0.99), 'initial': -0.05},
+            'Kresp_tas': {'bounds': (-0.99, 0.99), 'initial': 0.1},
+            'Kresp_pr': {'bounds': (-0.99, 0.99), 'initial': -0.05},
+            'Ktfp_tas': {'bounds': (-0.99, 0.99), 'initial': 0.1},
+            'Ktfp_pr': {'bounds': (-0.99, 0.99), 'initial': -0.05}
+        }
+        
+        # Build optimization lists
+        for param in params_to_optimize:
+            if param in param_definitions:
+                param_bounds.append(param_definitions[param]['bounds'])
+                initial_guess.append(param_definitions[param]['initial'])
+            else:
+                print(f"WARNING: Unknown parameter '{param}' in params_to_optimize")
+                # Use default bounds and initial guess for unknown parameters
+                param_bounds.append((-1.0, 1.0))
+                initial_guess.append(0.0)
+        
+        if not params_to_optimize:
+            print("No parameters to optimize - running simulation with fixed parameters only")
+            
+            # Create complete parameter dictionary with fixed values
+            complete_params = fixed_params.copy()
+            
+            # Add derived parameters
+            alpha = complete_params.get('alpha', 0.5)
+            Ksoil = complete_params.get('Ksoil_0', 0.1)
+            complete_params['Cland_init'] = first_guess_user_params(data_df, alpha, Ksoil)
+            
+            # Run simulation
+            results_df = run_bgc_simulation(data_df, complete_params, co2_df)
+            
+            # Create optimization info for no-optimization case
+            optimization_info = {
+                'success': True,
+                'iterations': 0,
+                'function_evaluations': 0,
+                'initial_mse': 0.0,
+                'final_mse': 0.0,
+                'optimized_parameters': [],
+                'fixed_parameters': list(fixed_params.keys())
+            }
+            
+            return True, complete_params, results_df, optimization_info
+        
+        # Create complete parameter dictionary (fixed + optimized)
+        complete_params = fixed_params.copy()
+        
+        # Add CO2 data to complete_params for objective function
+        if co2_df is not None:
+            complete_params['_co2_df'] = co2_df
+        else:
+            complete_params['_co2_df'] = None
+        
+        # Run optimization
+        print(f"DEBUG: Starting optimization with {len(params_to_optimize)} parameters")
+        print(f"DEBUG: Parameters to optimize: {params_to_optimize}")
+        print(f"DEBUG: Fixed parameters: {list(fixed_params.keys())}")
+        print(f"DEBUG: Initial guess: {initial_guess}")
+        
+        initial_mse = objective_function(initial_guess, data_df, params_to_optimize, complete_params)
+        print(f"DEBUG: Initial objective value: {initial_mse}")
+        
+        result = optimize.minimize(
+            objective_function,
+            initial_guess,
+            args=(data_df, params_to_optimize, complete_params),
+            bounds=param_bounds,
+            method='L-BFGS-B',
+            options={'maxiter': 1000, 'gtol': 1e-8}
+        )
+        
+        print(f"DEBUG: Optimization finished. Success: {result.success}")
+        print(f"DEBUG: Final objective value: {result.fun}")
+        print(f"DEBUG: Number of iterations: {result.nit}")
+        print(f"DEBUG: Number of function evaluations: {result.nfev}")
+        print(f"DEBUG: Final parameter values: {result.x}")
+        
+        if result.success:
+            # Create complete parameter dictionary with optimized values
+            optimized_params = fixed_params.copy()
+            optimized_params.update(dict(zip(params_to_optimize, result.x)))
+            
+            # Add derived parameters
+            alpha = optimized_params.get('alpha', 0.5)
+            Ksoil = optimized_params.get('Ksoil_0', 0.1)
+            optimized_params['Cland_init'] = first_guess_user_params(data_df, alpha, Ksoil)
+            
+            # Run final simulation
+            results_df = run_bgc_simulation(data_df, optimized_params, co2_df)
+            
+            # Create optimization info
+            optimization_info = {
+                'success': True,
+                'iterations': result.nit,
+                'function_evaluations': result.nfev,
+                'initial_mse': initial_mse,
+                'final_mse': result.fun,
+                'optimized_parameters': params_to_optimize,
+                'fixed_parameters': list(fixed_params.keys())
+            }
+            
+            return True, optimized_params, results_df, optimization_info
+        else:
+            print(f"Optimization failed: {result.message}")
+            optimization_info = {
+                'success': False,
+                'error_message': result.message,
+                'iterations': result.nit,
+                'function_evaluations': result.nfev,
+                'initial_mse': initial_mse,
+                'final_mse': result.fun
+            }
+            return False, {}, pd.DataFrame(), optimization_info
+            
+    except Exception as e:
+        print(f"Error in optimize_parameters: {e}")
+        import traceback
+        traceback.print_exc()
+        return False, {}, pd.DataFrame(), {'success': False, 'error': str(e)}
+
 def save_fitted_parameters(all_fitted_params, step, single_file=True):
     """
     Save fitted parameters to CSV file(s) with standardized column order.
@@ -659,3 +821,93 @@ def get_available_regions_and_models():
     except Exception as e:
         print(f"Error reading data file: {e}")
         return [], []
+
+def run_single_region_model_clean(region, model, step, fixed_params, params_to_optimize, co2_df=None):
+    """
+    Run simulation for a single region/model combination using the clean parameter approach.
+    
+    Args:
+        region (str): Geographic region
+        model (str): Climate model
+        step (str): Analysis step ('step1', 'step2', 'step3')
+        fixed_params (dict): Dictionary of fixed parameter values
+        params_to_optimize (list): List of parameter names to optimize
+        co2_df (pd.DataFrame, optional): CO2 concentration data
+    
+    Returns:
+        tuple: (success, param_dict, results_df, optimization_info)
+    """
+    try:
+        # Load data based on step
+        if step == "step1":
+            data_file = "data/input/Data_regression_piControl.csv"
+            filtered_df = load_and_filter_data(data_file, region, model)
+        elif step == "step2":
+            filtered_df = load_and_filter_data_step2(region, model)
+        elif step == "step3":
+            filtered_df = load_and_filter_data_step3(region, model)
+        else:
+            print(f"ERROR: Unknown step '{step}'")
+            return False, {}, pd.DataFrame(), {}
+        
+        if filtered_df.empty:
+            print(f"No data found for {region} / {model}")
+            return False, {}, pd.DataFrame(), {}
+        
+        # If no parameters to optimize, just run simulation with fixed parameters
+        if not params_to_optimize:
+            print(f"Running simulation with fixed parameters for {region} / {model}")
+            
+            # Add derived parameters
+            complete_params = fixed_params.copy()
+            alpha = complete_params.get('alpha', 0.5)
+            Ksoil = complete_params.get('Ksoil_0', 0.1)
+            complete_params['Cland_init'] = first_guess_user_params(filtered_df, alpha, Ksoil)
+            
+            # Run simulation
+            results_df = run_bgc_simulation(filtered_df, complete_params, co2_df)
+            
+            # Add metadata
+            complete_params.update({
+                'region': region,
+                'model': model,
+                'step': step,
+                'optimization_success': True,
+                'final_mse': 0.0  # No optimization performed
+            })
+            
+            optimization_info = {
+                'success': True,
+                'iterations': 0,
+                'function_evaluations': 0,
+                'initial_mse': 0.0,
+                'final_mse': 0.0,
+                'optimized_parameters': [],
+                'fixed_parameters': list(fixed_params.keys())
+            }
+            
+            return True, complete_params, results_df, optimization_info
+        
+        # Run optimization
+        print(f"Running optimization for {region} / {model} (Step {step})")
+        success, optimized_params, results_df, optimization_info = optimize_parameters(
+            fixed_params, params_to_optimize, filtered_df, co2_df
+        )
+        
+        if success:
+            # Add metadata
+            optimized_params.update({
+                'region': region,
+                'model': model,
+                'step': step,
+                'optimization_success': True,
+                'final_mse': optimization_info['final_mse']
+            })
+        
+        return success, optimized_params, results_df, optimization_info
+        
+    except Exception as e:
+        print(f"Error processing {region} / {model}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False, {}, pd.DataFrame(), {'success': False, 'error': str(e)}

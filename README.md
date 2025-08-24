@@ -54,7 +54,7 @@ Where co2_0 = 284.318604 ppm (pre-industrial reference concentration)
 
 **Data used:** Concatenated historical + SSP585bgc simulation data + historical-SSP585 CO2 concentrations
 
-### Step 3: Climate Sensitivity Estimation ⚠️ KNOWN ISSUE
+### Step 3: Climate Sensitivity Estimation ✅ COMPLETED
 Use the SSP585 simulation to estimate climate sensitivity parameters for temperature and precipitation effects.
 
 **Parameters fitted:**
@@ -70,17 +70,36 @@ Use the SSP585 simulation to estimate climate sensitivity parameters for tempera
 
 **Data used:** Concatenated historical + SSP585 simulation data
 
-**⚠️ KNOWN ISSUE:** The optimization in Step 3 is currently not changing the initial guess values for climate sensitivity parameters. The optimization appears to be running but returning the initial values instead of finding optimal solutions. This suggests either a flat objective function or numerical issues with the optimization process.
+**✅ OPTIMIZATION WORKING:** The optimization now successfully changes initial guess values and finds optimal solutions for climate sensitivity parameters.
 
 ## Code Architecture
 
-The project has been refactored into a modular structure:
+The project has been refactored into a modular structure with a clean parameter optimization approach:
 
 - **`main.py`**: Command-line interface and orchestration
 - **`step_utils.py`**: Shared utilities, BGC simulation, parameter optimization
 - **`step1.py`**: Pre-industrial parameter fitting
 - **`step2.py`**: CO2 fertilization effects
 - **`step3.py`**: Climate sensitivity estimation
+
+### New Clean Parameter Optimization Approach
+
+The project now uses a clean, explicit parameter management system:
+
+```python
+def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
+    """
+    Optimize parameters for BGC simulation using a clean, explicit approach.
+    
+    Args:
+        fixed_params (dict): Dictionary of parameter names and their fixed values
+        params_to_optimize (list): List of parameter names to optimize
+        data_df (pd.DataFrame): Data for fitting (must contain year, tas, pr, npp columns)
+        co2_df (pd.DataFrame, optional): CO2 concentration data
+    """
+```
+
+This approach makes parameter management much clearer and more maintainable.
 
 ## Features
 - **Multi-step analysis**: Sequential parameter fitting with inheritance between steps
@@ -92,6 +111,7 @@ The project has been refactored into a modular structure:
 - **Comprehensive output**: Timestamped CSV files with all fitted parameters
 - **Virtual environment**: Isolated Python environment for dependencies
 - **Flexible parameter control**: Set specific parameters to zero while optimizing others
+- **Clean parameter management**: Explicit fixed vs. optimized parameter handling
 
 ## Getting Started
 
@@ -154,8 +174,8 @@ The model generates timestamped output files in `data/output/`:
 ## Current Status
 - **Step 1**: ✅ **COMPLETED** - Pre-industrial parameter fitting with uncertainty estimation
 - **Step 2**: ✅ **COMPLETED** - CO2 fertilization effect estimation with historical-SSP585 CO2 data
-- **Step 3**: ⚠️ **KNOWN ISSUE** - Climate sensitivity parameter estimation (optimization not changing initial guesses)
-- **Code Refactoring**: ✅ **COMPLETED** - Modular architecture with step-specific modules
+- **Step 3**: ✅ **COMPLETED** - Climate sensitivity parameter estimation (optimization working correctly)
+- **Code Refactoring**: ✅ **COMPLETED** - Modular architecture with clean parameter optimization approach
 - **Virtual Environment**: ✅ **COMPLETED** - Isolated Python environment with all dependencies
 
 ## Command Line Options

@@ -7,8 +7,8 @@ using pre-industrial control data where CO2 and climate are constant.
 
 import os
 from step_utils import (
-    get_run_output_directory, get_output_filename, run_single_region_model,
-    save_fitted_parameters
+    get_run_output_directory, get_output_filename, run_single_region_model_clean,
+    save_fitted_parameters, load_and_filter_data
 )
 
 def run_step1_analysis(args, regions_to_run, models_to_run):
@@ -26,58 +26,60 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
     print("=== Step 1: Pre-industrial Parameter Fitting ===")
     print("Using piControl data (constant CO2 and climate)")
     
-    # Check if user provided specific parameters
-    user_params = {}
-    has_user_params = False
+    # Build fixed parameters dictionary and parameters to optimize list
+    fixed_params = {}
+    params_to_optimize = []
     
+    # Check main parameters
     if args.Ksoil_0 is not None:
-        user_params['Ksoil_0'] = args.Ksoil_0
+        fixed_params['Ksoil_0'] = args.Ksoil_0
         print(f"Using provided Ksoil_0: {args.Ksoil_0}")
-        has_user_params = True
+    else:
+        params_to_optimize.append('Ksoil_0')
+        
     if args.Kresp_0 is not None:
-        user_params['Kresp_0'] = args.Kresp_0
+        fixed_params['Kresp_0'] = args.Kresp_0
         print(f"Using provided Kresp_0: {args.Kresp_0}")
-        has_user_params = True
+    else:
+        params_to_optimize.append('Kresp_0')
+        
     if args.Ktfp_0 is not None:
-        user_params['Ktfp_0'] = args.Ktfp_0
+        fixed_params['Ktfp_0'] = args.Ktfp_0
         print(f"Using provided Ktfp_0: {args.Ktfp_0}")
-        has_user_params = True
+    else:
+        params_to_optimize.append('Ktfp_0')
+        
     if args.alpha is not None:
-        user_params['alpha'] = args.alpha
+        fixed_params['alpha'] = args.alpha
         print(f"Using provided alpha: {args.alpha}")
-        has_user_params = True
+    else:
+        params_to_optimize.append('alpha')
     
     # Step 1 doesn't use climate sensitivity parameters - they should be zero
     # Only add them if explicitly provided (for testing purposes)
     if args.Ksoil_tas is not None:
-        user_params['Ksoil_tas'] = args.Ksoil_tas
+        fixed_params['Ksoil_tas'] = args.Ksoil_tas
         print(f"Using provided Ksoil_tas: {args.Ksoil_tas}")
-        has_user_params = True
     if args.Ksoil_pr is not None:
-        user_params['Ksoil_pr'] = args.Ksoil_pr
+        fixed_params['Ksoil_pr'] = args.Ksoil_pr
         print(f"Using provided Ksoil_pr: {args.Ksoil_pr}")
-        has_user_params = True
     if args.Kresp_tas is not None:
-        user_params['Kresp_tas'] = args.Kresp_tas
+        fixed_params['Kresp_tas'] = args.Kresp_tas
         print(f"Using provided Kresp_tas: {args.Kresp_tas}")
-        has_user_params = True
     if args.Kresp_pr is not None:
-        user_params['Kresp_pr'] = args.Kresp_pr
+        fixed_params['Kresp_pr'] = args.Kresp_pr
         print(f"Using provided Kresp_pr: {args.Kresp_pr}")
-        has_user_params = True
     if args.Ktfp_tas is not None:
-        user_params['Ktfp_tas'] = args.Ktfp_tas
+        fixed_params['Ktfp_tas'] = args.Ktfp_tas
         print(f"Using provided Ktfp_tas: {args.Ktfp_tas}")
-        has_user_params = True
     if args.Ktfp_pr is not None:
-        user_params['Ktfp_pr'] = args.Ktfp_pr
+        fixed_params['Ktfp_pr'] = args.Ktfp_pr
         print(f"Using provided Ktfp_pr: {args.Ktfp_pr}")
-        has_user_params = True
     
-    if has_user_params:
-        print("Running with user-provided parameters (no optimization)")
+    if params_to_optimize:
+        print(f"Running parameter optimization for: {params_to_optimize}")
     else:
-        print("Running parameter optimization")
+        print("Running with user-provided parameters (no optimization)")
     
     # Store all successful results
     all_fitted_params = []
@@ -93,29 +95,37 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
             current_combination += 1
             print(f"\n[{current_combination}/{total_combinations}] Processing {region} / {model}")
             
-            # Run simulation for this region/model (no CO2 data for step1)
-            success, params_dict, results_df = run_single_region_model(region, model, args, user_params, co2_df=None)
+            # Run simulation using the new clean approach
+            success, param_dict, results_df, optimization_info = run_single_region_model_clean(
+                region, model, "step1", fixed_params, params_to_optimize
+            )
             
             if success:
                 successful_runs += 1
-                all_fitted_params.append(params_dict)
+                all_fitted_params.append(param_dict)
                 
-                # Save individual simulation results
-                results_filename = get_output_filename("simulation_results", region, model, "step1")
-                results_filepath = os.path.join(get_run_output_directory(), results_filename)
-                results_df.to_csv(results_filepath, index=False)
-                print(f"Simulation results saved to {results_filepath}")
+                # Save individual results
+                from step_utils import get_run_output_directory
+                output_filename = get_output_filename("simulation_results", region, model, "step1")
+                output_filepath = os.path.join(get_run_output_directory(), output_filename)
+                results_df.to_csv(output_filepath, index=False)
+                print(f"Simulation results saved to {output_filepath}")
+                
+                print(f"✅ Success: MSE = {param_dict.get('final_mse', 'N/A')}")
+                if optimization_info.get('iterations', 0) > 0:
+                    print(f"   Optimization: {optimization_info['iterations']} iterations, {optimization_info['function_evaluations']} function evaluations")
             else:
                 failed_runs += 1
-                print(f"Failed to process {region} / {model}")
+                print(f"❌ Failed: {optimization_info.get('error', 'Unknown error')}")
     
-    # Save all fitted parameters to a single file
+    # Save all fitted parameters
     if all_fitted_params:
-        save_fitted_parameters(all_fitted_params, "step1", single_file=True)
+        save_fitted_parameters(all_fitted_params, "step1")
     
+    # Print summary
     print(f"\n=== Step 1 Summary ===")
     print(f"Successful runs: {successful_runs}")
     print(f"Failed runs: {failed_runs}")
-    print(f"Success rate: {successful_runs/total_combinations*100:.1f}%")
+    print(f"Total combinations: {total_combinations}")
     
     return all_fitted_params, successful_runs, failed_runs
