@@ -10,7 +10,6 @@ from step2 import run_step2_analysis, load_step1_parameters
 from step3 import run_step3_analysis, load_step_parameters
 from step4 import run_step4_analysis
 from step_utils import get_available_regions_and_models, load_step_parameters_from_file
-from plotting_utils import create_all_books
 
 def run_complete_analysis(args, step):
     """
@@ -168,10 +167,7 @@ def run_complete_analysis(args, step):
         successful_runs = total_success
         failed_runs = total_failed
         
-        # Create PDF books with results
-        print("\n" + "="*50)
-        print("=== Creating PDF Books ===")
-        create_all_books()
+        # PDF books will be created separately using --create-pdf-books command
     else:
         print(f"Unknown step: {step}")
         return
@@ -306,11 +302,21 @@ def parse_command_line_args():
     parser.add_argument('--step', type=str, default='all',
                        help='Analysis step to run: step1, step2, step3, step4, or all (default: all)')
     
+    # PDF creation option
+    parser.add_argument('--create-pdf-books', action='store_true',
+                       help='Create PDF books from existing results (does not run analysis)')
+    
     return parser.parse_args()
 
 if __name__ == "__main__":
     # Parse command line arguments
     args = parse_command_line_args()
     
-    # Run the complete analysis
-    run_complete_analysis(args, args.step)
+    # Check if we're just creating PDF books
+    if args.create_pdf_books:
+        print("=== Creating PDF Books from Existing Results ===")
+        from plotting_utils import create_all_books
+        create_all_books()
+    else:
+        # Run the complete analysis
+        run_complete_analysis(args, args.step)
