@@ -501,7 +501,7 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
         # Add parameters to optimize (only those not provided by user)
         if 'Ksoil_0' not in user_params:
             param_names.append('Ksoil_0')
-            param_bounds.append((0.01, 0.99))
+            param_bounds.append((0.001, 2.0))  # Expanded bounds
             initial_guess.append(0.1)
         
         if 'Kresp_0' not in user_params:
@@ -511,12 +511,12 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
         
         if 'Ktfp_0' not in user_params:
             param_names.append('Ktfp_0')
-            param_bounds.append((0, 10.0))
+            param_bounds.append((0.1, 50.0))  # Expanded bounds
             initial_guess.append(1.0)
         
         if 'alpha' not in user_params:
             param_names.append('alpha')
-            param_bounds.append((0.1, 1.0))
+            param_bounds.append((0.05, 2.0))  # Expanded bounds
             initial_guess.append(0.5)
         
         # Add CO2 parameter for step2
@@ -652,10 +652,10 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
         
         # Parameter definitions with bounds and initial guesses
         param_definitions = {
-            'Ksoil_0': {'bounds': (0.01, 0.99), 'initial': 0.1},
+            'Ksoil_0': {'bounds': (0.001, 2.0), 'initial': 0.1},      # Expanded bounds for diverse ecosystems
             'Kresp_0': {'bounds': (0.01, 0.99), 'initial': 0.5},
-            'Ktfp_0': {'bounds': (0, 10.0), 'initial': 1.0},
-            'alpha': {'bounds': (0.1, 1.0), 'initial': 0.5},
+            'Ktfp_0': {'bounds': (0.1, 50.0), 'initial': 1.0},        # Expanded bounds for diverse productivity
+            'alpha': {'bounds': (0.05, 2.0), 'initial': 0.5},          # Expanded bounds for different production functions
             'Ktfp_co2': {'bounds': (0.0, 2000.0), 'initial': 0.1},
             'Ktfp_tas0': {'bounds': (10.0, 30.0), 'initial': 20.57},  # Reference temperature (°C)
             'Ktfp_tas1': {'bounds': (-0.99, 0.99), 'initial': 0.1},   # Temperature sensitivity

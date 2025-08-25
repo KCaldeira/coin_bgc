@@ -199,7 +199,6 @@ def determine_regions_and_models_to_run(args):
     """
     # Get all available regions and models
     all_regions, all_models = get_available_regions_and_models()
-    
     if not all_regions or not all_models:
         print("Error: Could not read regions and models from data file")
         return [], []
@@ -317,9 +316,26 @@ if __name__ == "__main__":
         # Run the complete analysis
         run_complete_analysis(args, args.step)
         
-        # If running all steps, also create PDF books automatically
-        if args.step == "all":
-            print("\n" + "="*50)
-            print("=== Creating PDF Books ===")
-            from plotting_utils import create_all_books
-            create_all_books()
+        # Create step-specific PDF books
+        print("\n" + "="*50)
+        print("=== Creating PDF Books ===")
+        from plotting_utils import create_step1_book, create_step2_book, create_step4_book, create_step3_vs_step4_bookntetheab 
+        from step_utils import get_most_recent_output_directory
+        
+        output_dir = get_most_recent_output_directory()
+        if output_dir is None:
+            print("No output directories found. Cannot create PDF books.")
+        else:
+            if args.step == "step1":
+                create_step1_book(output_dir)
+            elif args.step == "step2":
+                create_step2_book(output_dir)
+            elif args.step == "step3":
+                # Step 3 and 4 are always run together, so create the comparison book
+                create_step3_vs_step4_book(output_dir)
+            elif args.step == "step4":
+                create_step4_book(output_dir)
+            elif args.step == "all":
+                # Create all books for complete analysis
+                from plotting_utils import create_all_books
+                create_all_books()

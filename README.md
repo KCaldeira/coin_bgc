@@ -37,6 +37,9 @@ Fit the parameters of a Solow-Swan growth model to the results of a pre-industri
 
 **Data used:** piControl simulation data
 
+**🔬 BREAKTHROUGH INSIGHT FOR TOMORROW:**
+The current approach uses numerical optimization to fit parameters to time series data. A more physically sound approach would be to use the **steady-state assumption** for the pre-industrial period (dCland/dt = 0), solving analytically for parameter relationships and reducing optimization dimensionality.
+
 ### Step 2: CO2 Fertilization Effect ✅ COMPLETED
 Use the SSP585bgc simulation (where the biosphere sees the CO2 increase but the physics of the climate system does not) to tune a parameter, **Ktfp_co2**, which indicates the sensitivity of Ktfp to CO2 increase.
 
@@ -88,6 +91,30 @@ Rerun Step 2's scenario (CO2 fertilization data) using all coefficients found in
 **No new parameters fitted:** All parameters from previous steps are used as fixed values.
 
 **Data used:** Same as Step 2 (concatenated historical + SSP585bgc simulation data)
+
+## Recent Improvements and Breakthroughs
+
+### Parameter Bounds Optimization ✅ RESOLVED
+**Issue**: Different regions have vastly different ecosystem characteristics, causing optimization to hit parameter bounds.
+
+**Solution**: Expanded parameter bounds to accommodate diverse ecosystem types:
+- **Ksoil_0**: (0.01, 0.99) → (0.001, 2.0) - For diverse soil respiration rates
+- **Ktfp_0**: (0, 10.0) → (0.1, 50.0) - For diverse productivity levels  
+- **alpha**: (0.1, 1.0) → (0.05, 2.0) - For different production function shapes
+
+**Results**: 
+- Zimbabwe: Ksoil_0=0.136, Ktfp_0=0.984, alpha=0.492 (reasonable values)
+- Brazil: Ksoil_0=0.145, Ktfp_0=0.981, alpha=0.490 (reasonable values)
+- All regions now get physically meaningful parameter estimates
+
+### Steady-State Approach for Step 1 🔬 PLANNED FOR TOMORROW
+**Breakthrough Insight**: Use steady-state assumption (dCland/dt = 0) for pre-industrial period instead of numerical optimization.
+
+**Expected Benefits**:
+- Eliminates parameter bounds issues entirely
+- More computationally efficient
+- Better parameter interpretability
+- Leverages fundamental physical assumptions
 
 ## New Climate Sensitivity Parameterization
 

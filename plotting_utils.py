@@ -147,6 +147,138 @@ def create_step2_book(output_dir):
     
     print(f"Step 2 book saved to: {pdf_path}")
 
+def create_step3_book(output_dir):
+    """
+    Create PDF book showing Step 3 results.
+    
+    Each panel shows:
+    - GPP_data (blue line, linewidth=2)
+    - GPP_model (fine blue line)
+    """
+    print("Creating Step 3 results book...")
+    
+    # Find Step 3 simulation results files
+    step3_files = []
+    if os.path.isdir(output_dir):
+        step3_files = [f for f in os.listdir(output_dir) if f.startswith("simulation_results_") and "_step3" in f]
+    
+    if not step3_files:
+        print("No Step 3 simulation results found.")
+        return
+    
+    # Create PDF
+    pdf_path = os.path.join(output_dir, "Step3_Results_Book.pdf")
+    with PdfPages(pdf_path) as pdf:
+        for file_path in sorted(step3_files):
+            # Load simulation results
+            full_path = os.path.join(output_dir, file_path)
+            df = pd.read_csv(full_path)
+            
+            # Extract region and model from filename
+            # Remove simulation_results_ prefix and step suffix
+            clean_name = file_path.replace("simulation_results_", "")
+            # Find the step pattern and remove everything from there
+            for step in ["_step1", "_step2", "_step3", "_step4"]:
+                if step in clean_name:
+                    clean_name = clean_name.split(step)[0]
+                    break
+            parts = clean_name.split("_")
+            region = parts[0]
+            model = "_".join(parts[1:])  # Model name might contain underscores
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(12, 8))
+            
+            # Plot GPP data only
+            ax.plot(df['year'], df['gpp_data'], 'b-', linewidth=2, label='GPP Data', alpha=0.8)
+            ax.plot(df['year'], df['GPP'], 'b-', linewidth=1, label='GPP Model', alpha=0.6)
+            
+            # Customize plot
+            ax.set_xlabel('Year', fontsize=12)
+            ax.set_ylabel('GPP (kg C m⁻² yr⁻¹)', fontsize=12)
+            ax.set_title(f'Step 3 Results: {region} / {model}', fontsize=14, fontweight='bold')
+            ax.legend(fontsize=10)
+            ax.grid(True, alpha=0.3)
+            
+            # Add MSE information if available
+            if 'final_mse' in df.columns:
+                mse = df['final_mse'].iloc[0]
+                ax.text(0.02, 0.98, f'MSE: {mse:.4f}', transform=ax.transAxes, 
+                       verticalalignment='top', fontsize=10, 
+                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+            
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close()
+    
+    print(f"Step 3 book saved to: {pdf_path}")
+
+def create_step4_book(output_dir):
+    """
+    Create PDF book showing Step 4 results.
+    
+    Each panel shows:
+    - GPP_data (red line, linewidth=2)
+    - GPP_model (fine red line)
+    """
+    print("Creating Step 4 results book...")
+    
+    # Find Step 4 simulation results files
+    step4_files = []
+    if os.path.isdir(output_dir):
+        step4_files = [f for f in os.listdir(output_dir) if f.startswith("simulation_results_") and "_step4" in f]
+    
+    if not step4_files:
+        print("No Step 4 simulation results found.")
+        return
+    
+    # Create PDF
+    pdf_path = os.path.join(output_dir, "Step4_Results_Book.pdf")
+    with PdfPages(pdf_path) as pdf:
+        for file_path in sorted(step4_files):
+            # Load simulation results
+            full_path = os.path.join(output_dir, file_path)
+            df = pd.read_csv(full_path)
+            
+            # Extract region and model from filename
+            # Remove simulation_results_ prefix and step suffix
+            clean_name = file_path.replace("simulation_results_", "")
+            # Find the step pattern and remove everything from there
+            for step in ["_step1", "_step2", "_step3", "_step4"]:
+                if step in clean_name:
+                    clean_name = clean_name.split(step)[0]
+                    break
+            parts = clean_name.split("_")
+            region = parts[0]
+            model = "_".join(parts[1:])  # Model name might contain underscores
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(12, 8))
+            
+            # Plot GPP data only
+            ax.plot(df['year'], df['gpp_data'], 'r-', linewidth=2, label='GPP Data', alpha=0.8)
+            ax.plot(df['year'], df['GPP'], 'r-', linewidth=1, label='GPP Model', alpha=0.6)
+            
+            # Customize plot
+            ax.set_xlabel('Year', fontsize=12)
+            ax.set_ylabel('GPP (kg C m⁻² yr⁻¹)', fontsize=12)
+            ax.set_title(f'Step 4 Results: {region} / {model}', fontsize=14, fontweight='bold')
+            ax.legend(fontsize=10)
+            ax.grid(True, alpha=0.3)
+            
+            # Add MSE information if available
+            if 'final_mse' in df.columns:
+                mse = df['final_mse'].iloc[0]
+                ax.text(0.02, 0.98, f'MSE: {mse:.4f}', transform=ax.transAxes, 
+                       verticalalignment='top', fontsize=10, 
+                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+            
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close()
+    
+    print(f"Step 4 book saved to: {pdf_path}")
+
 def create_step3_vs_step4_book(output_dir):
     """
     Create PDF book comparing Step 3 vs Step 4 results.
@@ -266,6 +398,8 @@ def create_all_books():
     
     create_step1_book(output_dir)
     create_step2_book(output_dir)
+    create_step3_book(output_dir)
+    create_step4_book(output_dir)
     create_step3_vs_step4_book(output_dir)
     
     print("All PDF books created successfully!")
