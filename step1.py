@@ -75,17 +75,23 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
                     'Cland_init': Cland_0
                 }
                 
-                # Only optimize alpha
-                params_to_optimize = ['alpha']
-                
-                print(f"Fixed parameters: Ksoil_0={args.Ksoil_0:.4f}, Kresp_0={Kresp_0:.4f}, Ktfp_0={Ktfp_0:.4f}, Cland_0={Cland_0:.4f}")
-                print(f"Optimizing: {params_to_optimize}")
-                
-                # Calculate optimal alpha analytically for Step 1
-                print(f"\n=== Analytical Alpha Optimization for {region} / {model} ===")
-                optimal_alpha, mse_values = calculate_optimal_alpha_step1(
-                    data_df, args.Ksoil_0, Kresp_0, Cland_0, alpha_bounds=(-1, 1)
-                )
+                # Check if alpha was provided on command line
+                if args.alpha is not None:
+                    # Use provided alpha, skip optimization
+                    optimal_alpha = args.alpha
+                    print(f"Using provided alpha: {optimal_alpha}")
+                    print(f"Fixed parameters: Ksoil_0={args.Ksoil_0:.4f}, Kresp_0={Kresp_0:.4f}, Cland_0={Cland_0:.4f}")
+                    print(f"User-specified alpha: {optimal_alpha}")
+                else:
+                    # Run analytical optimization
+                    print(f"Fixed parameters: Ksoil_0={args.Ksoil_0:.4f}, Kresp_0={Kresp_0:.4f}, Ktfp_0={Ktfp_0:.4f}, Cland_0={Cland_0:.4f}")
+                    print(f"Optimizing: alpha")
+                    
+                    # Calculate optimal alpha analytically for Step 1
+                    print(f"\n=== Analytical Alpha Optimization for {region} / {model} ===")
+                    optimal_alpha, mse_values = calculate_optimal_alpha_step1(
+                        data_df, args.Ksoil_0, Kresp_0, Cland_0, alpha_bounds=(-1, 1)
+                    )
                 
                 # Create parameter dictionary with optimal alpha
                 param_dict = {
@@ -106,12 +112,22 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
                 results_df = run_bgc_simulation(data_df, param_dict, use_observed_npp_for_cland=True)
                 
                 success = True
-                optimization_info = {
-                    'success': True,
-                    'method': 'analytical_alpha_optimization',
-                    'optimal_alpha': optimal_alpha,
-                    'final_mse': mse_values[optimal_alpha]
-                }
+                if args.alpha is not None:
+                    # User-specified alpha
+                    optimization_info = {
+                        'success': True,
+                        'method': 'user_specified_alpha',
+                        'optimal_alpha': optimal_alpha,
+                        'final_mse': 'N/A (user-specified)'
+                    }
+                else:
+                    # Analytically optimized alpha
+                    optimization_info = {
+                        'success': True,
+                        'method': 'analytical_alpha_optimization',
+                        'optimal_alpha': optimal_alpha,
+                        'final_mse': mse_values[optimal_alpha]
+                    }
                 
                 if success:
                     successful_runs += 1
@@ -128,10 +144,15 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
                     results_df.to_csv(output_filepath, index=False)
                     print(f"Simulation results saved to {output_filepath}")
                     
-                    print(f"✅ Success: Analytical optimization completed")
-                    print(f"   Optimized alpha: {param_dict.get('alpha', 'N/A')}")
-                    print(f"   Final MSE: {optimization_info.get('final_mse', 'N/A')}")
-                    print(f"   Method: {optimization_info.get('method', 'N/A')}")
+                    if args.alpha is not None:
+                        print(f"✅ Success: User-specified alpha used")
+                        print(f"   Alpha: {param_dict.get('alpha', 'N/A')}")
+                        print(f"   Method: {optimization_info.get('method', 'N/A')}")
+                    else:
+                        print(f"✅ Success: Analytical optimization completed")
+                        print(f"   Optimized alpha: {param_dict.get('alpha', 'N/A')}")
+                        print(f"   Final MSE: {optimization_info.get('final_mse', 'N/A')}")
+                        print(f"   Method: {optimization_info.get('method', 'N/A')}")
                 else:
                     failed_runs += 1
                     print(f"❌ Failed: {optimization_info.get('error', 'Unknown error')}")
