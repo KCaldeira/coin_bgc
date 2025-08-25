@@ -244,6 +244,38 @@ def load_and_filter_data_step3(region, model):
         print(f"Error loading Step 3 data for {region}/{model}: {e}")
         return pd.DataFrame()
 
+def analyze_steady_state_data(data_df):
+    """
+    Analyze steady-state data to calculate Kresp_0 and Cland_0 from piControl simulation.
+    
+    Args:
+        data_df (pd.DataFrame): piControl data with columns ['year', 'tas', 'pr', 'gpp', 'npp']
+    
+    Returns:
+        dict: Dictionary containing calculated steady-state parameters
+            - Kresp_0: Calculated from npp_mean / gpp_mean
+            - Cland_0: Calculated from (1 - Kresp_0) * gpp_mean / Ksoil_0
+            - gpp_mean: Mean GPP from data
+            - npp_mean: Mean NPP from data
+    """
+    # Calculate time-mean values
+    gpp_mean = data_df['gpp'].mean()
+    npp_mean = data_df['npp'].mean()
+    
+    # Calculate Kresp_0 from steady-state assumption
+    Kresp_0 = npp_mean / gpp_mean
+    
+    print(f"Steady-state analysis:")
+    print(f"  Mean GPP: {gpp_mean:.4f} kg C m⁻² yr⁻¹")
+    print(f"  Mean NPP: {npp_mean:.4f} kg C m⁻² yr⁻¹")
+    print(f"  Calculated Kresp_0: {Kresp_0:.4f}")
+    
+    return {
+        'Kresp_0': Kresp_0,
+        'gpp_mean': gpp_mean,
+        'npp_mean': npp_mean
+    }
+
 def load_co2_data(filepath="data/input/historical-ssp585_co2.csv"):
     """
     Load CO2 concentration data from the historical-SSP585 file.
@@ -271,7 +303,7 @@ def get_co2_for_year(co2_df, year):
         co2_df_sorted = co2_df.sort_values('year')
         return np.interp(year, co2_df_sorted['year'], co2_df_sorted['co2'])
 
-def run_bgc_simulation(filtered_df, params, co2_df=None, co2_0=284.318604):
+def run_bgc_simulation(filtered_df, params, co2_df=None, co2_0=284.318604, use_observed_npp_for_cland=False):
     """
     Run BGC simulation with optional CO2 dependence.
     
@@ -338,29 +370,46 @@ def run_bgc_simulation(filtered_df, params, co2_df=None, co2_0=284.318604):
         Ksoil = params.get('Ksoil_0', 0.1)
         Kresp = params.get('Kresp_0', 0.5)
         
-        # Calculate Ktfp with optional CO2 dependence
-        Ktfp_0 = params.get('Ktfp_0', 1.0)
-        Ktfp_tas0 = params.get('Ktfp_tas0', 20.57)  # mean temperature (should be initialized from piControl)
-        Ktfp_tas1 = params.get('Ktfp_tas1', 0.0) # linear temperature sensitivity
-        Ktfp_pr0 = params.get('Ktfp_pr0', 3.26)  # mean precipitation (should be initialized from piControl)
-        Ktfp_pr1 = params.get('Ktfp_pr1', 0.0) # linear precipitation sensitivity
-    
-        tas_factor = 1 + Ktfp_tas1 * (tas - Ktfp_tas0) 
-        pr_factor = 1 + Ktfp_pr1 * (pr - Ktfp_pr0)
-
-        if 'Ktfp_co2' in params and co2_df is not None:
-            # CO2-dependent Ktfp calculation
-            co2_factor = (1 + params['Ktfp_co2']) * ((co2/co2_0) / (params['Ktfp_co2'] + co2/co2_0))
+        # Calculate Ktfp using standard formula
+        if 'Ktfp_0' in params:
+            # Use provided Ktfp_0
+            Ktfp_0 = params['Ktfp_0']
+            Ktfp = Ktfp_0
         else:
-            co2_factor = 1.0
+            # Fallback to original calculation for other steps
+            Ktfp_0 = params.get('Ktfp_0', 1.0)
+            Ktfp_tas0 = params.get('Ktfp_tas0', 20.57)  # mean temperature (should be initialized from piControl)
+            Ktfp_tas1 = params.get('Ktfp_tas1', 0.0) # linear temperature sensitivity
+            Ktfp_pr0 = params.get('Ktfp_pr0', 3.26)  # mean precipitation (should be initialized from piControl)
+            Ktfp_pr1 = params.get('Ktfp_pr1', 0.0) # linear precipitation sensitivity
+        
+            tas_factor = 1 + Ktfp_tas1 * (tas - Ktfp_tas0) 
+            pr_factor = 1 + Ktfp_pr1 * (pr - Ktfp_pr0)
 
-        Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
+            if 'Ktfp_co2' in params and co2_df is not None:
+                # CO2-dependent Ktfp calculation
+                co2_factor = (1 + params['Ktfp_co2']) * ((co2/co2_0) / (params['Ktfp_co2'] + co2/co2_0))
+            else:
+                co2_factor = 1.0
+
+            Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
         
         GPP = Ktfp * (Cland ** alpha)
         Presp = Kresp * GPP  # plant respiration
         NPP = GPP - Presp
+        
+        # Debug output for first few iterations
+        if i < 3:
+            print(f"DEBUG: Year {year}, Cland={Cland:.4f}, Ktfp={Ktfp:.4f}, alpha={alpha:.4f}, GPP={GPP:.4f}, NPP={NPP:.4f}")
         Sresp = Ksoil * Cland  # soil respiration
-        dCland_dt = NPP - Sresp
+        
+        # Use observed NPP for Cland update if flag is set (for Step 1 fitting)
+        if use_observed_npp_for_cland:
+            npp_for_cland = row['npp']  # Use observed NPP data
+        else:
+            npp_for_cland = NPP  # Use model-calculated NPP
+        
+        dCland_dt = npp_for_cland - Sresp
         
         results.append({
             'year': year,
@@ -413,8 +462,16 @@ def objective_function(params, filtered_df, param_names, user_params):
     alpha = param_dict.get('alpha', 0.5)
     Ksoil = param_dict.get('Ksoil_0', 0.1)
     
-    # Calculate Cland_init
-    param_dict['Cland_init'] = first_guess_user_params(filtered_df, alpha, Ksoil)
+    # Calculate Cland_init only if not already provided
+    if 'Cland_init' not in param_dict:
+        param_dict['Cland_init'] = first_guess_user_params(filtered_df, alpha, Ksoil)
+    
+    # Recalculate Ktfp_0 for the current alpha value (only when Ktfp_0 is not provided)
+    if 'alpha' in param_dict and 'Ktfp_0' not in param_dict:
+        gpp_mean = filtered_df['gpp'].mean()
+        Cland_0 = param_dict['Cland_init']  # This is already calculated correctly
+        param_dict['Ktfp_0'] = gpp_mean / (Cland_0 ** param_dict['alpha'])
+        print(f"DEBUG: Recalculated Ktfp_0: alpha={param_dict['alpha']:.4f}, Ktfp_0={param_dict['Ktfp_0']:.4f}")
     
     # Run simulation
     # Note: co2_df is not available in objective_function, so we need to pass it through user_params
@@ -432,8 +489,35 @@ def objective_function(params, filtered_df, param_names, user_params):
     
     results_df = run_bgc_simulation(filtered_df, param_dict, co2_df)
     
-    # Calculate error (MSE between simulated and observed NPP)
-    mse = np.mean((results_df['NPP'] - results_df['npp_data'])**2)
+    # Calculate error (MSE between simulated and observed GPP for Step 1, NPP for other steps)
+    use_observed_npp = user_params.get('_use_observed_npp_for_cland', False)
+    if use_observed_npp:
+        # Step 1: Minimize GPP MSE
+        if 'gpp_data' in results_df.columns:
+            mse = np.mean((results_df['GPP'] - results_df['gpp_data'])**2)
+        else:
+            mse = np.mean((results_df['GPP'] - filtered_df['gpp'])**2)
+    else:
+        # Other steps: Minimize NPP MSE
+        if 'npp_data' in results_df.columns:
+            mse = np.mean((results_df['NPP'] - results_df['npp_data'])**2)
+        else:
+            mse = np.mean((results_df['NPP'] - filtered_df['npp'])**2)
+    
+    # Debug output for alpha optimization
+    if 'alpha' in param_dict:
+        print(f"DEBUG: alpha={param_dict['alpha']:.4f}, MSE={mse:.6f}")
+        # Show actual NPP values for comparison
+        if len(results_df) > 0:
+            print(f"DEBUG: First 3 NPP values - Data: {filtered_df['npp'].iloc[:3].values}, Model: {results_df['NPP'].iloc[:3].values}")
+        # Check for NaN values in results
+        if np.isnan(mse):
+            print(f"DEBUG: WARNING - MSE is NaN! Checking simulation results...")
+            if len(results_df) > 0:
+                print(f"DEBUG: First few GPP values: {results_df['GPP'].iloc[:3].values}")
+                print(f"DEBUG: First few NPP values: {results_df['NPP'].iloc[:3].values}")
+                print(f"DEBUG: Any NaN in GPP: {results_df['GPP'].isna().any()}")
+                print(f"DEBUG: Any NaN in NPP: {results_df['NPP'].isna().any()}")
     
     return mse
 
@@ -655,7 +739,7 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
             'Ksoil_0': {'bounds': (0.001, 2.0), 'initial': 0.1},      # Expanded bounds for diverse ecosystems
             'Kresp_0': {'bounds': (0.01, 0.99), 'initial': 0.5},
             'Ktfp_0': {'bounds': (0.1, 50.0), 'initial': 1.0},        # Expanded bounds for diverse productivity
-            'alpha': {'bounds': (0.05, 2.0), 'initial': 0.5},          # Expanded bounds for different production functions
+            'alpha': {'bounds': (0, 1), 'initial': 0.5},                # Standard production function bounds
             'Ktfp_co2': {'bounds': (0.0, 2000.0), 'initial': 0.1},
             'Ktfp_tas0': {'bounds': (10.0, 30.0), 'initial': 20.57},  # Reference temperature (°C)
             'Ktfp_tas1': {'bounds': (-0.99, 0.99), 'initial': 0.1},   # Temperature sensitivity
@@ -712,12 +796,48 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
         
         # Run optimization
         print(f"DEBUG: Starting optimization with {len(params_to_optimize)} parameters")
+        print(f"DEBUG: Initial guess: {initial_guess}")
+        print(f"DEBUG: Parameter bounds: {param_bounds}")
+        
+        # Test objective function at initial guess
+        test_params = fixed_params.copy()
+        for i, param in enumerate(params_to_optimize):
+            test_params[param] = initial_guess[i]
+        
+        # Add derived parameters for test
+        alpha = test_params.get('alpha', 0.5)
+        Ksoil = test_params.get('Ksoil_0', 0.1)
+        if 'Cland_init' not in test_params:
+            test_params['Cland_init'] = first_guess_user_params(data_df, alpha, Ksoil)
+        
+        test_results = run_bgc_simulation(data_df, test_params, co2_df)
+        test_mse = np.mean((test_results['NPP'] - data_df['npp'])**2)
+        print(f"DEBUG: Initial MSE: {test_mse:.6f}")
+        
+        # Test objective function with slightly different alpha
+        if 'alpha' in params_to_optimize:
+            alpha_idx = params_to_optimize.index('alpha')
+            test_alpha = initial_guess[alpha_idx] + 0.1
+            test_params['alpha'] = test_alpha
+            test_results2 = run_bgc_simulation(data_df, test_params, co2_df)
+            test_mse2 = np.mean((test_results2['NPP'] - data_df['npp'])**2)
+            print(f"DEBUG: MSE with alpha={test_alpha}: {test_mse2:.6f}")
+            print(f"DEBUG: MSE difference: {abs(test_mse2 - test_mse):.6f}")
+            print(f"DEBUG: Is MSE difference significant? {abs(test_mse2 - test_mse) > 1e-6}")
         print(f"DEBUG: Parameters to optimize: {params_to_optimize}")
         print(f"DEBUG: Fixed parameters: {list(fixed_params.keys())}")
         print(f"DEBUG: Initial guess: {initial_guess}")
         
         initial_mse = objective_function(initial_guess, data_df, params_to_optimize, complete_params)
         print(f"DEBUG: Initial objective value: {initial_mse}")
+        
+        # Test a few different alpha values manually to see if the function changes
+        test_alphas = [0.3, 0.5, 0.7]
+        for test_alpha in test_alphas:
+            test_params = complete_params.copy()
+            test_params['alpha'] = test_alpha
+            test_mse = objective_function([test_alpha], data_df, params_to_optimize, complete_params)
+            print(f"DEBUG: Manual test - alpha={test_alpha:.1f}, MSE={test_mse:.6f}")
         
         result = optimize.minimize(
             objective_function,
@@ -733,19 +853,29 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
         print(f"DEBUG: Number of iterations: {result.nit}")
         print(f"DEBUG: Number of function evaluations: {result.nfev}")
         print(f"DEBUG: Final parameter values: {result.x}")
+        print(f"DEBUG: Why optimizer stopped: {result.message}")
         
         if result.success:
             # Create complete parameter dictionary with optimized values
             optimized_params = fixed_params.copy()
             optimized_params.update(dict(zip(params_to_optimize, result.x)))
             
-            # Add derived parameters
+            # Add derived parameters (only if not already provided)
             alpha = optimized_params.get('alpha', 0.5)
             Ksoil = optimized_params.get('Ksoil_0', 0.1)
-            optimized_params['Cland_init'] = first_guess_user_params(data_df, alpha, Ksoil)
+            if 'Cland_init' not in optimized_params:
+                optimized_params['Cland_init'] = first_guess_user_params(data_df, alpha, Ksoil)
+            
+            # Recalculate Ktfp_0 for the final simulation using optimized alpha
+            gpp_mean = data_df['gpp'].mean()
+            Cland_0 = optimized_params['Cland_init']
+            optimized_params['Ktfp_0'] = gpp_mean / (Cland_0 ** alpha)
+            print(f"DEBUG: Final simulation - alpha={alpha:.4f}, Ktfp_0={optimized_params['Ktfp_0']:.4f}")
             
             # Run final simulation
-            results_df = run_bgc_simulation(data_df, optimized_params, co2_df)
+            print(f"DEBUG: Final simulation parameters: {optimized_params}")
+            use_observed_npp = complete_params.get('_use_observed_npp_for_cland', False)
+            results_df = run_bgc_simulation(data_df, optimized_params, co2_df, use_observed_npp_for_cland=use_observed_npp)
             
             # Create optimization info
             optimization_info = {
@@ -976,3 +1106,102 @@ def run_single_region_model_clean(region, model, step, fixed_params, params_to_o
         import traceback
         traceback.print_exc()
         return False, {}, pd.DataFrame(), {'success': False, 'error': str(e)}
+
+def calculate_optimal_alpha_step1(filtered_df, Ksoil_0, Kresp_0, Cland_init, alpha_bounds=(-1, 1)):
+    """
+    Calculate optimal alpha for Step 1 using analytical approach.
+    
+    This function:
+    1. Evolves Cland using observed NPP data
+    2. Calculates predicted NPP for different alpha values
+    3. Finds alpha that minimizes NPP MSE
+    
+    Args:
+        filtered_df: DataFrame with observed data
+        Ksoil_0: Base soil respiration rate
+        Kresp_0: Base plant respiration fraction
+        Cland_init: Initial carbon in land
+        alpha_bounds: Tuple of (min_alpha, max_alpha)
+    
+    Returns:
+        optimal_alpha: The alpha value that minimizes GPP MSE
+        mse_values: Dictionary of alpha values and their corresponding MSE
+    """
+    print(f"DEBUG: Calculating optimal alpha analytically for Step 1")
+    print(f"DEBUG: Ksoil_0={Ksoil_0:.4f}, Kresp_0={Kresp_0:.4f}, Cland_init={Cland_init:.4f}")
+    
+    # Get observed data
+    npp_data = filtered_df['npp'].values
+    gpp_data = filtered_df['gpp'].values
+    years = filtered_df['year'].values
+    
+    print(f"DEBUG: Data range: {len(years)} years, GPP mean={gpp_data.mean():.4f}, NPP mean={npp_data.mean():.4f}")
+    
+    # Test a range of alpha values with higher resolution
+    alpha_values = np.linspace(alpha_bounds[0], alpha_bounds[1], 500)
+    mse_values = {}
+    
+    # Also test some specific values that might be meaningful
+    special_alphas = [-0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0]
+    alpha_values = np.concatenate([alpha_values, special_alphas])
+    alpha_values = np.unique(alpha_values)  # Remove duplicates
+    alpha_values.sort()  # Sort for consistent order
+    
+    for alpha in alpha_values:
+        # Calculate Ktfp_0 for this alpha
+        gpp_mean = gpp_data.mean()
+        Ktfp_0 = gpp_mean / (Cland_init ** alpha)
+        
+        # Evolve Cland using observed NPP
+        Cland_series = [Cland_init]
+        for i in range(len(years) - 1):
+            Cland_t = Cland_series[-1]
+            # Cland[t+1] = Cland[t] + npp_data[t] - Ksoil_0 * Cland[t]
+            Cland_next = Cland_t + npp_data[i] - Ksoil_0 * Cland_t
+            Cland_series.append(Cland_next)
+        
+        # Calculate predicted GPP and NPP for each time step
+        predicted_gpp = []
+        predicted_npp = []
+        for Cland_t in Cland_series:
+            gpp_t = Ktfp_0 * (Cland_t ** alpha)
+            npp_t = gpp_t * (1 - Kresp_0)  # NPP = GPP * (1 - Kresp_0)
+            predicted_gpp.append(gpp_t)
+            predicted_npp.append(npp_t)
+        
+        # Calculate MSE between predicted and observed NPP
+        mse = np.mean((np.array(predicted_npp) - npp_data) ** 2)
+        mse_values[alpha] = mse
+        
+        # Debug output for first few alpha values and every 50th value
+        if len(mse_values) <= 5 or len(mse_values) % 50 == 0:
+            print(f"DEBUG: alpha={alpha:.4f}, Ktfp_0={Ktfp_0:.4f}, MSE={mse:.6f}")
+            print(f"DEBUG:   Cland range: {min(Cland_series):.4f} to {max(Cland_series):.4f}")
+            print(f"DEBUG:   NPP range: {min(predicted_npp):.4f} to {max(predicted_npp):.4f}")
+            print(f"DEBUG:   GPP range: {min(predicted_gpp):.4f} to {max(predicted_gpp):.4f}")
+    
+    # Find optimal alpha
+    optimal_alpha = min(mse_values, key=mse_values.get)
+    optimal_mse = mse_values[optimal_alpha]
+    
+    # Analyze MSE landscape
+    mse_list = list(mse_values.values())
+    alpha_list = list(mse_values.keys())
+    
+    # Find local minima (values that are lower than their neighbors)
+    local_minima = []
+    for i in range(1, len(mse_list) - 1):
+        if mse_list[i] < mse_list[i-1] and mse_list[i] < mse_list[i+1]:
+            local_minima.append((alpha_list[i], mse_list[i]))
+    
+    print(f"DEBUG: Optimal alpha found: {optimal_alpha:.4f} with MSE: {optimal_mse:.6f}")
+    print(f"DEBUG: Number of local minima found: {len(local_minima)}")
+    if len(local_minima) > 1:
+        local_minima_str = ", ".join([f"({a:.4f}, {m:.6f})" for a, m in local_minima[:5]])
+        print(f"DEBUG: Local minima at: {local_minima_str}")
+    
+    # Check if the optimal value is at the boundary
+    if optimal_alpha == alpha_bounds[0] or optimal_alpha == alpha_bounds[1]:
+        print(f"DEBUG: WARNING - Optimal alpha is at boundary ({optimal_alpha:.4f})")
+    
+    return optimal_alpha, mse_values

@@ -37,6 +37,11 @@ def run_complete_analysis(args, step):
     
     # Run the appropriate step(s)
     if step == "step1":
+        # Validate that Ksoil_0 is provided for Step 1
+        if args.Ksoil_0 is None:
+            print("Error: --Ksoil_0 is required for Step 1. Please provide a value.")
+            print("Example: python main.py --step step1 --Ksoil_0 0.1 --region 'Zimbabwe'")
+            exit(1)
         all_fitted_params, successful_runs, failed_runs = run_step1_analysis(args, regions_to_run, models_to_run)
     elif step == "step2":
         # Try to load Step 1 parameters if available
@@ -271,7 +276,7 @@ def parse_command_line_args():
     
     # Model parameters (optional - will use optimization if not provided)
     parser.add_argument('--Ksoil_0', type=float, default=None,
-                       help='Base soil respiration rate (if None, will be optimized)')
+                       help='Base soil respiration rate (required for Step 1, optional for other steps)')
     parser.add_argument('--Kresp_0', type=float, default=None,
                        help='Base plant respiration fraction (if None, will be optimized)')
     parser.add_argument('--Ktfp_0', type=float, default=None,
@@ -319,7 +324,7 @@ if __name__ == "__main__":
         # Create step-specific PDF books
         print("\n" + "="*50)
         print("=== Creating PDF Books ===")
-        from plotting_utils import create_step1_book, create_step2_book, create_step4_book, create_step3_vs_step4_bookntetheab 
+        from plotting_utils import create_step1_book, create_step2_book, create_step4_book, create_step3_vs_step4_book 
         from step_utils import get_most_recent_output_directory
         
         output_dir = get_most_recent_output_directory()

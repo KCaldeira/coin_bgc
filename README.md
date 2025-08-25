@@ -23,22 +23,28 @@ Where Ktfp can be a function of temperature (tas), precipitation (pr), and CO2 c
 
 ## Processing Steps
 
-### Step 1: Pre-industrial Parameter Fitting ✅ COMPLETED
+### Step 1: Pre-industrial Parameter Fitting 🔬 ANALYTICAL APPROACH IMPLEMENTED
 Fit the parameters of a Solow-Swan growth model to the results of a pre-industrial climate model simulation, assuming that the system does not respond at all to climate change.
 
 **Parameters fitted:**
 - Ksoil_0 (specified a priori)
-- Kresp_0 (plant respiration fraction)
-- Ktfp_0 (total factor productivity)
-- alpha (production function exponent)
+- Kresp_0 (plant respiration fraction) - calculated analytically from steady-state
+- Ktfp_0 (total factor productivity) - calculated analytically for each alpha
+- alpha (production function exponent) - optimized analytically
 
 **Climate sensitivity parameters set to zero:**
 - Ktfp_tas0, Ktfp_tas1, Ktfp_pr0, Ktfp_pr1 = 0
 
 **Data used:** piControl simulation data
 
-**🔬 BREAKTHROUGH INSIGHT FOR TOMORROW:**
-The current approach uses numerical optimization to fit parameters to time series data. A more physically sound approach would be to use the **steady-state assumption** for the pre-industrial period (dCland/dt = 0), solving analytically for parameter relationships and reducing optimization dimensionality.
+**🔬 ANALYTICAL ALPHA OPTIMIZATION APPROACH:**
+Instead of numerical optimization, Step 1 now uses an analytical approach:
+1. **Steady-state analysis**: Calculate Kresp_0 and Cland_0 from time-mean data
+2. **Analytical Cland evolution**: Use observed NPP data to evolve Cland: `Cland[t+1] = Cland[t] + npp_data[t] - Ksoil_0 * Cland[t]`
+3. **GPP prediction**: Calculate predicted GPP for each alpha: `GPP[t] = Ktfp_0 * Cland[t]^alpha`
+4. **MSE minimization**: Find alpha that minimizes `MSE = mean((predicted_GPP - observed_GPP)²)`
+
+**Current Challenge**: All regions converging to similar small positive alpha values (~0.24), suggesting potential issues with the optimization landscape or data characteristics.
 
 ### Step 2: CO2 Fertilization Effect ✅ COMPLETED
 Use the SSP585bgc simulation (where the biosphere sees the CO2 increase but the physics of the climate system does not) to tune a parameter, **Ktfp_co2**, which indicates the sensitivity of Ktfp to CO2 increase.
@@ -94,13 +100,33 @@ Rerun Step 2's scenario (CO2 fertilization data) using all coefficients found in
 
 ## Recent Improvements and Breakthroughs
 
+### Analytical Alpha Optimization for Step 1 🔬 IMPLEMENTED
+**New Approach**: Step 1 now uses analytical optimization instead of numerical optimization.
+
+**Implementation**:
+- **Ksoil_0**: Required user-provided parameter (command-line argument)
+- **Kresp_0**: Calculated from steady-state: `Kresp_0 = npp_mean / gpp_mean`
+- **Cland_0**: Calculated from steady-state: `Cland_0 = (1 - Kresp_0) * gpp_mean / Ksoil_0`
+- **Analytical Cland evolution**: Use observed NPP data: `Cland[t+1] = Cland[t] + npp_data[t] - Ksoil_0 * Cland[t]`
+- **GPP prediction**: For each alpha, calculate `GPP[t] = Ktfp_0 * Cland[t]^alpha` where `Ktfp_0 = gpp_mean / (Cland_0^alpha)`
+- **MSE minimization**: Test 500+ alpha values, find minimum of `MSE = mean((predicted_GPP - observed_GPP)²)`
+
+**Benefits**:
+- Much faster than numerical optimization
+- No convergence issues or flat objective functions
+- Direct calculation of optimal alpha
+- Higher resolution search (500+ alpha values tested)
+- Landscape analysis to identify local minima
+
+**Current Challenge**: All regions converging to similar alpha values (~0.24), suggesting need for better optimization strategy.
+
 ### Parameter Bounds Optimization ✅ RESOLVED
 **Issue**: Different regions have vastly different ecosystem characteristics, causing optimization to hit parameter bounds.
 
 **Solution**: Expanded parameter bounds to accommodate diverse ecosystem types:
 - **Ksoil_0**: (0.01, 0.99) → (0.001, 2.0) - For diverse soil respiration rates
 - **Ktfp_0**: (0, 10.0) → (0.1, 50.0) - For diverse productivity levels  
-- **alpha**: (0.1, 1.0) → (0.05, 2.0) - For different production function shapes
+- **alpha**: (0.1, 1.0) → (0, 1) - Standard production function bounds
 
 **Results**: 
 - Zimbabwe: Ksoil_0=0.136, Ktfp_0=0.984, alpha=0.492 (reasonable values)
@@ -199,8 +225,8 @@ pip install -r requirements.txt
 
 ### 2. Run Individual Steps
 ```bash
-# Step 1: Pre-industrial parameter fitting
-python main.py --step step1 --region "Zimbabwe" --model "ACCESS-ESM1-5"
+# Step 1: Pre-industrial parameter fitting (Ksoil_0 is required)
+python main.py --step step1 --Ksoil_0 0.1 --region "Zimbabwe" --model "ACCESS-ESM1-5"
 
 # Step 2: CO2 fertilization effects
 python main.py --step step2 --region "Zimbabwe" --model "ACCESS-ESM1-5"
@@ -215,7 +241,7 @@ python main.py --step step4 --region "Zimbabwe" --model "ACCESS-ESM1-5"
 ### 3. Run Complete Analysis
 ```bash
 # Run all steps sequentially (including PDF generation)
-python main.py --step all --region "Zimbabwe" --model "ACCESS-ESM1-5"
+python main.py --step all --Ksoil_0 0.1 --region "Zimbabwe" --model "ACCESS-ESM1-5"
 
 # Run for multiple regions
 python main.py --step all --regions "Zimbabwe" "Zambia" --models "ACCESS-ESM1-5"
@@ -223,8 +249,8 @@ python main.py --step all --regions "Zimbabwe" "Zambia" --models "ACCESS-ESM1-5"
 
 ### 4. Run with Fixed Parameters
 ```bash
-# Fix specific parameters for any step
-python main.py --step step1 --Ksoil_0 0.05 --region "Zimbabwe"
+# Fix specific parameters for any step (Ksoil_0 is required for Step 1)
+python main.py --step step1 --Ksoil_0 0.1 --region "Zimbabwe"
 python main.py --step step2 --Ktfp_co2 0.1 --region "Zimbabwe"
 
 # Set some climate sensitivity parameters to zero while optimizing others

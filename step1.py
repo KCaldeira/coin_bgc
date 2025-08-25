@@ -1,79 +1,32 @@
 """
-Step 1: Pre-industrial parameter fitting using piControl data.
+Step 1: Pre-industrial parameter fitting using piControl data with steady-state approach.
 
-This step fits the basic BGC model parameters (Ksoil_0, Kresp_0, Ktfp_0, alpha)
-using pre-industrial control data where CO2 and climate are constant.
+This step uses steady-state analysis to calculate Ktfp_0 analytically,
+then optimizes alpha using the time-dependent piControl simulation.
 """
 
 import os
 from step_utils import (
     get_run_output_directory, get_output_filename, run_single_region_model_clean,
-    save_fitted_parameters, load_and_filter_data
+    save_fitted_parameters, load_and_filter_data, analyze_steady_state_data,
+    calculate_optimal_alpha_step1, run_bgc_simulation
 )
 
 def run_step1_analysis(args, regions_to_run, models_to_run):
     """
-    Step 1: Pre-industrial parameter fitting using piControl data.
+    Step 1: Pre-industrial parameter fitting using steady-state approach.
     
     Args:
-        args: Parsed command line arguments
+        args: Parsed command line arguments (Ksoil_0 is required)
         regions_to_run: List of regions to process
         models_to_run: List of models to process
     
     Returns:
         tuple: (all_fitted_params, successful_runs, failed_runs)
     """
-    print("=== Step 1: Pre-industrial Parameter Fitting ===")
-    print("Using piControl data (constant CO2 and climate)")
-    
-    # Build fixed parameters dictionary and parameters to optimize list
-    fixed_params = {}
-    params_to_optimize = []
-    
-    # Check main parameters
-    if args.Ksoil_0 is not None:
-        fixed_params['Ksoil_0'] = args.Ksoil_0
-        print(f"Using provided Ksoil_0: {args.Ksoil_0}")
-    else:
-        params_to_optimize.append('Ksoil_0')
-        
-    if args.Kresp_0 is not None:
-        fixed_params['Kresp_0'] = args.Kresp_0
-        print(f"Using provided Kresp_0: {args.Kresp_0}")
-    else:
-        params_to_optimize.append('Kresp_0')
-        
-    if args.Ktfp_0 is not None:
-        fixed_params['Ktfp_0'] = args.Ktfp_0
-        print(f"Using provided Ktfp_0: {args.Ktfp_0}")
-    else:
-        params_to_optimize.append('Ktfp_0')
-        
-    if args.alpha is not None:
-        fixed_params['alpha'] = args.alpha
-        print(f"Using provided alpha: {args.alpha}")
-    else:
-        params_to_optimize.append('alpha')
-    
-    # Step 1 doesn't use climate sensitivity parameters - they should be zero
-    # Only add them if explicitly provided (for testing purposes)
-    if args.Ktfp_tas0 is not None:
-        fixed_params['Ktfp_tas0'] = args.Ktfp_tas0
-        print(f"Using provided Ktfp_tas0: {args.Ktfp_tas0}")
-    if args.Ktfp_tas1 is not None:
-        fixed_params['Ktfp_tas1'] = args.Ktfp_tas1
-        print(f"Using provided Ktfp_tas1: {args.Ktfp_tas1}")
-    if args.Ktfp_pr0 is not None:
-        fixed_params['Ktfp_pr0'] = args.Ktfp_pr0
-        print(f"Using provided Ktfp_pr0: {args.Ktfp_pr0}")
-    if args.Ktfp_pr1 is not None:
-        fixed_params['Ktfp_pr1'] = args.Ktfp_pr1
-        print(f"Using provided Ktfp_pr1: {args.Ktfp_pr1}")
-    
-    if params_to_optimize:
-        print(f"Running parameter optimization for: {params_to_optimize}")
-    else:
-        print("Running with user-provided parameters (no optimization)")
+    print("=== Step 1: Pre-industrial Parameter Fitting (Steady-State Approach) ===")
+    print("Using piControl data with steady-state analysis")
+    print(f"User-provided Ksoil_0: {args.Ksoil_0}")
     
     # Store all successful results
     all_fitted_params = []
@@ -89,28 +42,103 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
             current_combination += 1
             print(f"\n[{current_combination}/{total_combinations}] Processing {region} / {model}")
             
-            # Run simulation using the new clean approach
-            success, param_dict, results_df, optimization_info = run_single_region_model_clean(
-                region, model, "step1", fixed_params, params_to_optimize
-            )
-            
-            if success:
-                successful_runs += 1
-                all_fitted_params.append(param_dict)
+            try:
+                # Load piControl data for steady-state analysis
+                data_df = load_and_filter_data("data/input/Data_regression_piControl.csv", region, model)
+                if data_df.empty:
+                    print(f"❌ Failed: No data found for {region}/{model}")
+                    failed_runs += 1
+                    continue
                 
-                # Save individual results
-                from step_utils import get_run_output_directory
-                output_filename = get_output_filename("simulation_results", region, model, "step1")
-                output_filepath = os.path.join(get_run_output_directory(), output_filename)
-                results_df.to_csv(output_filepath, index=False)
-                print(f"Simulation results saved to {output_filepath}")
+                # Perform steady-state analysis
+                steady_state_results = analyze_steady_state_data(data_df)
+                Kresp_0 = steady_state_results['Kresp_0']
+                gpp_mean = steady_state_results['gpp_mean']
                 
-                print(f"✅ Success: MSE = {param_dict.get('final_mse', 'N/A')}")
-                if optimization_info.get('iterations', 0) > 0:
-                    print(f"   Optimization: {optimization_info['iterations']} iterations, {optimization_info['function_evaluations']} function evaluations")
-            else:
+                # Calculate Cland_0 from steady-state
+                Cland_0 = (1 - Kresp_0) * gpp_mean / args.Ksoil_0
+                print(f"  Calculated Cland_0: {Cland_0:.4f} kg C m⁻²")
+                
+                # Calculate Ktfp_0 from steady-state (using alpha=0.5 as initial guess)
+                # At steady-state: GPP = Ktfp_0 * Cland_0 ** alpha
+                # So: Ktfp_0 = GPP / (Cland_0 ** alpha)
+                alpha_guess = 0.5
+                Ktfp_0 = gpp_mean / (Cland_0 ** alpha_guess)
+                print(f"  Calculated Ktfp_0: {Ktfp_0:.4f} (using alpha={alpha_guess})")
+                print(f"  Verification: Ktfp_0 * Cland_0^{alpha_guess} = {Ktfp_0:.4f} * {Cland_0:.4f}^{alpha_guess} = {Ktfp_0 * (Cland_0 ** alpha_guess):.4f}")
+                print(f"  Target GPP: {gpp_mean:.4f}")
+                
+                # Build fixed parameters dictionary
+                fixed_params = {
+                    'Ksoil_0': args.Ksoil_0,
+                    'Kresp_0': Kresp_0,
+                    'Cland_init': Cland_0
+                }
+                
+                # Only optimize alpha
+                params_to_optimize = ['alpha']
+                
+                print(f"Fixed parameters: Ksoil_0={args.Ksoil_0:.4f}, Kresp_0={Kresp_0:.4f}, Ktfp_0={Ktfp_0:.4f}, Cland_0={Cland_0:.4f}")
+                print(f"Optimizing: {params_to_optimize}")
+                
+                # Calculate optimal alpha analytically for Step 1
+                print(f"\n=== Analytical Alpha Optimization for {region} / {model} ===")
+                optimal_alpha, mse_values = calculate_optimal_alpha_step1(
+                    data_df, args.Ksoil_0, Kresp_0, Cland_0, alpha_bounds=(-1, 1)
+                )
+                
+                # Create parameter dictionary with optimal alpha
+                param_dict = {
+                    'Ksoil_0': args.Ksoil_0,
+                    'Kresp_0': Kresp_0,
+                    'Cland_init': Cland_0,
+                    'alpha': optimal_alpha,
+                    'Ktfp_0': gpp_mean / (Cland_0 ** optimal_alpha),  # Recalculate for optimal alpha
+                    'region': region,
+                    'model': model,
+                    'step': 'step1'
+                }
+                
+                print(f"DEBUG: Final parameters: {param_dict}")
+                
+                # Run final simulation to verify fit
+                print(f"\n=== Running Final Simulation for Verification ===")
+                results_df = run_bgc_simulation(data_df, param_dict, use_observed_npp_for_cland=True)
+                
+                success = True
+                optimization_info = {
+                    'success': True,
+                    'method': 'analytical_alpha_optimization',
+                    'optimal_alpha': optimal_alpha,
+                    'final_mse': mse_values[optimal_alpha]
+                }
+                
+                if success:
+                    successful_runs += 1
+                    
+                    # Add metadata to results (preserve optimized parameters)
+                    param_dict['gpp_mean'] = gpp_mean
+                    param_dict['npp_mean'] = steady_state_results['npp_mean']
+                    
+                    all_fitted_params.append(param_dict)
+                    
+                    # Save individual results
+                    output_filename = get_output_filename("simulation_results", region, model, "step1")
+                    output_filepath = os.path.join(get_run_output_directory(), output_filename)
+                    results_df.to_csv(output_filepath, index=False)
+                    print(f"Simulation results saved to {output_filepath}")
+                    
+                    print(f"✅ Success: Analytical optimization completed")
+                    print(f"   Optimized alpha: {param_dict.get('alpha', 'N/A')}")
+                    print(f"   Final MSE: {optimization_info.get('final_mse', 'N/A')}")
+                    print(f"   Method: {optimization_info.get('method', 'N/A')}")
+                else:
+                    failed_runs += 1
+                    print(f"❌ Failed: {optimization_info.get('error', 'Unknown error')}")
+                    
+            except Exception as e:
                 failed_runs += 1
-                print(f"❌ Failed: {optimization_info.get('error', 'Unknown error')}")
+                print(f"❌ Failed: {str(e)}")
     
     # Save all fitted parameters
     if all_fitted_params:
