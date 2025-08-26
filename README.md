@@ -23,7 +23,7 @@ Where Ktfp can be a function of temperature (tas), precipitation (pr), and CO2 c
 
 ## Processing Steps
 
-### Step 1: Pre-industrial Parameter Fitting 🔬 ANALYTICAL APPROACH IMPLEMENTED
+### Step 1: Pre-industrial Parameter Fitting ✅ COMPLETED
 Fit the parameters of a Solow-Swan growth model to the results of a pre-industrial climate model simulation, assuming that the system does not respond at all to climate change.
 
 **Parameters fitted:**
@@ -37,14 +37,12 @@ Fit the parameters of a Solow-Swan growth model to the results of a pre-industri
 
 **Data used:** piControl simulation data
 
-**🔬 ANALYTICAL ALPHA OPTIMIZATION APPROACH:**
-Instead of numerical optimization, Step 1 now uses an analytical approach:
+**✅ ANALYTICAL ALPHA OPTIMIZATION APPROACH:**
+Step 1 uses an analytical approach:
 1. **Steady-state analysis**: Calculate Kresp_0 and Cland_0 from time-mean data
 2. **Analytical Cland evolution**: Use observed NPP data to evolve Cland: `Cland[t+1] = Cland[t] + npp_data[t] - Ksoil_0 * Cland[t]`
 3. **GPP prediction**: Calculate predicted GPP for each alpha: `GPP[t] = Ktfp_0 * Cland[t]^alpha`
 4. **MSE minimization**: Find alpha that minimizes `MSE = mean((predicted_GPP - observed_GPP)²)`
-
-**Current Challenge**: All regions converging to similar small positive alpha values (~0.24), suggesting potential issues with the optimization landscape or data characteristics.
 
 ### Step 2: CO2 Fertilization Effect ✅ COMPLETED
 Use the SSP585bgc simulation (where the biosphere sees the CO2 increase but the physics of the climate system does not) to tune a parameter, **Ktfp_co2**, which indicates the sensitivity of Ktfp to CO2 increase.
@@ -60,7 +58,7 @@ Use the SSP585bgc simulation (where the biosphere sees the CO2 increase but the 
 Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
 ```
 Where:
-- `co2_factor = (1 + Ktfp_co2) * ((co2/co2_0) / (Ktfp_co2 + co2/co2_0))`
+- `co2_factor = 1 + (co2 - co2_0) / Ktfp_co2`
 - `co2_0 = 284.318604` ppm (pre-industrial reference concentration)
 
 **Data used:** Concatenated historical + SSP585bgc simulation data + historical-SSP585 CO2 concentrations
@@ -69,9 +67,9 @@ Where:
 Use the SSP585 simulation to estimate climate sensitivity parameters for temperature and precipitation effects on total factor productivity (Ktfp).
 
 **Parameters fitted:**
-- **Ktfp_tas0**: Reference temperature (°C) - mean temperature from piControl simulation
+- **Ktfp_tas0**: Reference temperature (°C) - first temperature value from data
 - **Ktfp_tas1**: Temperature sensitivity coefficient - fractional change in Ktfp per °C deviation from reference
-- **Ktfp_pr0**: Reference precipitation (mm/day) - mean precipitation from piControl simulation  
+- **Ktfp_pr0**: Reference precipitation (mm/day) - first precipitation value from data  
 - **Ktfp_pr1**: Precipitation sensitivity coefficient - fractional change in Ktfp per mm/day deviation from reference
 
 **Parameters from Steps 1-2 used as starting values:**
@@ -87,7 +85,7 @@ Where:
 
 **Data used:** Concatenated historical + SSP585 simulation data
 
-**✅ OPTIMIZATION WORKING:** The optimization now successfully changes initial guess values and finds optimal solutions for climate sensitivity parameters.
+**✅ OPTIMIZATION WORKING:** The optimization now successfully uses data-driven initial guesses and finds optimal solutions for climate sensitivity parameters.
 
 ### Step 4: Validation ✅ COMPLETED
 Rerun Step 2's scenario (CO2 fertilization data) using all coefficients found in Step 3 (including climate sensitivities), without additional optimization.
@@ -100,26 +98,6 @@ Rerun Step 2's scenario (CO2 fertilization data) using all coefficients found in
 
 ## Recent Improvements and Breakthroughs
 
-### Analytical Alpha Optimization for Step 1 🔬 IMPLEMENTED
-**New Approach**: Step 1 now uses analytical optimization instead of numerical optimization.
-
-**Implementation**:
-- **Ksoil_0**: Required user-provided parameter (command-line argument)
-- **Kresp_0**: Calculated from steady-state: `Kresp_0 = npp_mean / gpp_mean`
-- **Cland_0**: Calculated from steady-state: `Cland_0 = (1 - Kresp_0) * gpp_mean / Ksoil_0`
-- **Analytical Cland evolution**: Use observed NPP data: `Cland[t+1] = Cland[t] + npp_data[t] - Ksoil_0 * Cland[t]`
-- **GPP prediction**: For each alpha, calculate `GPP[t] = Ktfp_0 * Cland[t]^alpha` where `Ktfp_0 = gpp_mean / (Cland_0^alpha)`
-- **MSE minimization**: Test 500+ alpha values, find minimum of `MSE = mean((predicted_GPP - observed_GPP)²)`
-
-**Benefits**:
-- Much faster than numerical optimization
-- No convergence issues or flat objective functions
-- Direct calculation of optimal alpha
-- Higher resolution search (500+ alpha values tested)
-- Landscape analysis to identify local minima
-
-**Current Challenge**: All regions converging to similar alpha values (~0.24), suggesting need for better optimization strategy.
-
 ### Parameter Bounds Optimization ✅ RESOLVED
 **Issue**: Different regions have vastly different ecosystem characteristics, causing optimization to hit parameter bounds.
 
@@ -127,31 +105,41 @@ Rerun Step 2's scenario (CO2 fertilization data) using all coefficients found in
 - **Ksoil_0**: (0.01, 0.99) → (0.001, 2.0) - For diverse soil respiration rates
 - **Ktfp_0**: (0, 10.0) → (0.1, 50.0) - For diverse productivity levels  
 - **alpha**: (0.1, 1.0) → (0, 1) - Standard production function bounds
+- **Ktfp_co2**: (0.0, 2000.0) → (0.0, 30.0) - Corrected units (multiplier on co2_0)
+- **Ktfp_pr0**: (1.0, 10.0) → (-10.0, 20.0) - Expanded for negative values
 
-**Results**: 
-- Zimbabwe: Ksoil_0=0.136, Ktfp_0=0.984, alpha=0.492 (reasonable values)
-- Brazil: Ksoil_0=0.145, Ktfp_0=0.981, alpha=0.490 (reasonable values)
-- All regions now get physically meaningful parameter estimates
+**Results**: All regions now get physically meaningful parameter estimates without hitting bounds.
 
-### Steady-State Approach for Step 1 🔬 PLANNED FOR TOMORROW
-**Breakthrough Insight**: Use steady-state assumption (dCland/dt = 0) for pre-industrial period instead of numerical optimization.
+### Data-Driven Initial Guesses ✅ IMPLEMENTED
+**Improvement**: Use actual data values for initial parameter guesses instead of fixed values.
 
-**Expected Benefits**:
-- Eliminates parameter bounds issues entirely
-- More computationally efficient
-- Better parameter interpretability
-- Leverages fundamental physical assumptions
+**Implementation**:
+- **Ktfp_tas0**: Uses first temperature value from data file as initial guess
+- **Ktfp_pr0**: Uses first precipitation value from data file as initial guess
+- **Other parameters**: Continue using predefined initial guesses
+
+**Benefits**:
+- More region-specific optimization
+- Better convergence due to realistic starting values
+- No need for generic global parameter estimates
+
+### Parameter Inheritance Fix ✅ RESOLVED
+**Issue**: Ktfp_0 was being recalculated in Step 2, causing GPP values to jump between steps.
+
+**Solution**: Made Ktfp_0 recalculation conditional - only happens in Step 1, not in Step 2 or beyond.
+
+**Results**: GPP values are now consistent between Step 1 and Step 2, with proper parameter inheritance.
 
 ## New Climate Sensitivity Parameterization
 
 The project now uses a sophisticated climate sensitivity parameterization that separates reference climate states from sensitivity coefficients:
 
 ### Temperature Sensitivity
-- **Ktfp_tas0**: Reference temperature (°C) - typically the mean temperature from piControl simulation (~20.57°C)
+- **Ktfp_tas0**: Reference temperature (°C) - first temperature value from data
 - **Ktfp_tas1**: Temperature sensitivity coefficient - represents fractional change in Ktfp per °C deviation from reference
 
 ### Precipitation Sensitivity  
-- **Ktfp_pr0**: Reference precipitation (mm/day) - typically the mean precipitation from piControl simulation (~3.26 mm/day)
+- **Ktfp_pr0**: Reference precipitation (mm/day) - first precipitation value from data
 - **Ktfp_pr1**: Precipitation sensitivity coefficient - represents fractional change in Ktfp per mm/day deviation from reference
 
 ### Physical Interpretation
@@ -164,7 +152,7 @@ This approach is more physically meaningful because:
 ### Parameter Bounds
 - **Ktfp_tas0**: (10.0, 30.0) °C - reasonable temperature range
 - **Ktfp_tas1**: (-0.99, 0.99) - fractional sensitivity bounds
-- **Ktfp_pr0**: (1.0, 10.0) mm/day - reasonable precipitation range
+- **Ktfp_pr0**: (-10.0, 20.0) mm/day - expanded precipitation range
 - **Ktfp_pr1**: (-0.99, 0.99) - fractional sensitivity bounds
 
 ## Code Architecture
@@ -184,7 +172,7 @@ The project has been refactored into a modular structure with a clean parameter 
 The project now uses a clean, explicit parameter management system:
 
 ```python
-def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
+def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None, step=None):
     """
     Optimize parameters for BGC simulation using a clean, explicit approach.
     
@@ -193,6 +181,7 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
         params_to_optimize (list): List of parameter names to optimize
         data_df (pd.DataFrame): Data for fitting (must contain year, tas, pr, npp columns)
         co2_df (pd.DataFrame, optional): CO2 concentration data
+        step (str, optional): Step identifier for conditional logic
     """
 ```
 
@@ -210,6 +199,7 @@ This approach makes parameter management much clearer and more maintainable.
 - **Virtual environment**: Isolated Python environment for dependencies
 - **Flexible parameter control**: Set specific parameters to zero while optimizing others
 - **Clean parameter management**: Explicit fixed vs. optimized parameter handling
+- **Data-driven initial guesses**: Use actual data values for parameter initialization
 
 ## Getting Started
 
@@ -289,14 +279,27 @@ The system automatically generates three PDF books when running all steps:
 - **Book 3**: Step 3 vs. Step 4 comparison (GPP data vs. GPP model for both steps)
 
 ## Current Status
-- **Step 1**: ✅ **COMPLETED** - Pre-industrial parameter fitting
+- **Step 1**: ✅ **COMPLETED** - Pre-industrial parameter fitting with analytical optimization
 - **Step 2**: ✅ **COMPLETED** - CO2 fertilization effect estimation
-- **Step 3**: ✅ **COMPLETED** - Climate sensitivity parameter estimation with new parameterization
+- **Step 3**: ✅ **COMPLETED** - Climate sensitivity parameter estimation with data-driven initial guesses
 - **Step 4**: ✅ **COMPLETED** - Validation step
 - **Code Refactoring**: ✅ **COMPLETED** - Modular architecture with clean parameter optimization approach
 - **Virtual Environment**: ✅ **COMPLETED** - Isolated Python environment with all dependencies
 - **PDF Visualization**: ✅ **COMPLETED** - Automatic PDF book generation
 - **Parameter Structure**: ✅ **COMPLETED** - Advanced climate sensitivity parameterization
+- **Parameter Inheritance**: ✅ **COMPLETED** - Proper parameter passing between steps
+- **Data-Driven Optimization**: ✅ **COMPLETED** - Using actual data values for initial guesses
+
+## Next Steps: Combined Temperature and CO2 Sensitivity Analysis
+
+The next major enhancement will be to use both the bgc and regular climate simulations together to find temperature and CO2 sensitivities simultaneously. This approach will:
+
+1. **Combine datasets**: Use both SSP585bgc (CO2 changes, constant climate) and SSP585 (both CO2 and climate changes) data
+2. **Simultaneous optimization**: Optimize both temperature and CO2 sensitivity parameters together
+3. **Better parameter separation**: More robust separation of CO2 and climate effects
+4. **Enhanced validation**: Cross-validation between different simulation types
+
+This will provide a more comprehensive understanding of the relative importance of CO2 fertilization vs. climate change effects on terrestrial carbon cycling.
 
 ## Command Line Options
 - `--step`: Specify step to run ("step1", "step2", "step3", "step4", "all")
