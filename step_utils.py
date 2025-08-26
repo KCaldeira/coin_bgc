@@ -373,36 +373,28 @@ def run_bgc_simulation(filtered_df, params, co2_df=None, co2_0=284.318604, use_o
         Kresp = params.get('Kresp_0', 0.5)
         
         # Calculate Ktfp using standard formula
-        if 'Ktfp_0' in params:
-            # Use provided Ktfp_0
-            Ktfp_0 = params['Ktfp_0']
-            Ktfp = Ktfp_0
+        Ktfp_0 = params.get('Ktfp_0', 1.0)
+        Ktfp_tas0 = params.get('Ktfp_tas0', 20.57)  # mean temperature (should be initialized from piControl)
+        Ktfp_tas1 = params.get('Ktfp_tas1', 0.0) # linear temperature sensitivity
+        Ktfp_pr0 = params.get('Ktfp_pr0', 3.26)  # mean precipitation (should be initialized from piControl)
+        Ktfp_pr1 = params.get('Ktfp_pr1', 0.0) # linear precipitation sensitivity
+    
+        tas_factor = 1 + Ktfp_tas1 * (tas - Ktfp_tas0) 
+        pr_factor = 1 + Ktfp_pr1 * (pr - Ktfp_pr0)
+
+        if 'Ktfp_co2' in params and co2_df is not None:
+            # CO2-dependent Ktfp calculation
+            co2_factor = (1 + params['Ktfp_co2']) * ((co2/co2_0) / (params['Ktfp_co2'] + co2/co2_0))
         else:
-            # Fallback to original calculation for other steps
-            Ktfp_0 = params.get('Ktfp_0', 1.0)
-            Ktfp_tas0 = params.get('Ktfp_tas0', 20.57)  # mean temperature (should be initialized from piControl)
-            Ktfp_tas1 = params.get('Ktfp_tas1', 0.0) # linear temperature sensitivity
-            Ktfp_pr0 = params.get('Ktfp_pr0', 3.26)  # mean precipitation (should be initialized from piControl)
-            Ktfp_pr1 = params.get('Ktfp_pr1', 0.0) # linear precipitation sensitivity
-        
-            tas_factor = 1 + Ktfp_tas1 * (tas - Ktfp_tas0) 
-            pr_factor = 1 + Ktfp_pr1 * (pr - Ktfp_pr0)
+            co2_factor = 1.0
 
-            if 'Ktfp_co2' in params and co2_df is not None:
-                # CO2-dependent Ktfp calculation
-                co2_factor = (1 + params['Ktfp_co2']) * ((co2/co2_0) / (params['Ktfp_co2'] + co2/co2_0))
-            else:
-                co2_factor = 1.0
-
-            Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
+        Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
         
         GPP = Ktfp * (Cland ** alpha)
         Presp = Kresp * GPP  # plant respiration
         NPP = GPP - Presp
         
-        # Debug output for first few iterations
-        if i < 3:
-            print(f"DEBUG: Year {year}, Cland={Cland:.4f}, Ktfp={Ktfp:.4f}, alpha={alpha:.4f}, GPP={GPP:.4f}, NPP={NPP:.4f}")
+
         Sresp = Ksoil * Cland  # soil respiration
         
         # Use observed NPP for Cland update if flag is set (for Step 1 fitting)
@@ -424,6 +416,7 @@ def run_bgc_simulation(filtered_df, params, co2_df=None, co2_0=284.318604, use_o
             'tas_data': tas,
             'pr_data': pr,
             'co2': co2,
+            'co2_factor': co2_factor,
             'gpp_data': row['gpp'],
             'npp_data': row['npp'],
             'region': row['region'],
@@ -506,20 +499,9 @@ def objective_function(params, filtered_df, param_names, user_params):
         else:
             mse = np.mean((results_df['NPP'] - filtered_df['npp'])**2)
     
-    # Debug output for alpha optimization
-    if 'alpha' in param_dict:
-        print(f"DEBUG: alpha={param_dict['alpha']:.4f}, MSE={mse:.6f}")
-        # Show actual NPP values for comparison
-        if len(results_df) > 0:
-            print(f"DEBUG: First 3 NPP values - Data: {filtered_df['npp'].iloc[:3].values}, Model: {results_df['NPP'].iloc[:3].values}")
-        # Check for NaN values in results
-        if np.isnan(mse):
-            print(f"DEBUG: WARNING - MSE is NaN! Checking simulation results...")
-            if len(results_df) > 0:
-                print(f"DEBUG: First few GPP values: {results_df['GPP'].iloc[:3].values}")
-                print(f"DEBUG: First few NPP values: {results_df['NPP'].iloc[:3].values}")
-                print(f"DEBUG: Any NaN in GPP: {results_df['GPP'].isna().any()}")
-                print(f"DEBUG: Any NaN in NPP: {results_df['NPP'].isna().any()}")
+
+    
+
     
     return mse
 
@@ -699,7 +681,7 @@ def run_single_region_model(region, model, args, user_params, co2_df=None):
         traceback.print_exc()
         return False, {}, pd.DataFrame()
 
-def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
+def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None, step=None):
     """
     Optimize parameters for BGC simulation using a clean, explicit approach.
     
@@ -742,10 +724,10 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
             'Kresp_0': {'bounds': (0.01, 0.99), 'initial': 0.5},
             'Ktfp_0': {'bounds': (0.1, 50.0), 'initial': 1.0},        # Expanded bounds for diverse productivity
             'alpha': {'bounds': (0, 1), 'initial': 0.5},                # Standard production function bounds
-            'Ktfp_co2': {'bounds': (0.0, 2000.0), 'initial': 0.1},
+                            'Ktfp_co2': {'bounds': (0.0, 30.0), 'initial': 5.0},
             'Ktfp_tas0': {'bounds': (10.0, 30.0), 'initial': 20.57},  # Reference temperature (°C)
             'Ktfp_tas1': {'bounds': (-0.99, 0.99), 'initial': 0.1},   # Temperature sensitivity
-            'Ktfp_pr0': {'bounds': (1.0, 10.0), 'initial': 3.26},     # Reference precipitation (mm/day)
+            'Ktfp_pr0': {'bounds': (-10.0, 20.0), 'initial': 3.26},     # Reference precipitation (mm/day) - expanded bounds
             'Ktfp_pr1': {'bounds': (-0.99, 0.99), 'initial': -0.05}   # Precipitation sensitivity
         }
         
@@ -753,7 +735,18 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
         for param in params_to_optimize:
             if param in param_definitions:
                 param_bounds.append(param_definitions[param]['bounds'])
-                initial_guess.append(param_definitions[param]['initial'])
+                
+                # Use data-driven initial guesses for climate parameters
+                if param == 'Ktfp_tas0' and 'tas' in data_df.columns:
+                    # Use first temperature value from data
+                    initial_guess.append(data_df['tas'].iloc[0])
+                    print(f"DEBUG: Using first tas value as Ktfp_tas0 initial guess: {data_df['tas'].iloc[0]:.2f}")
+                elif param == 'Ktfp_pr0' and 'pr' in data_df.columns:
+                    # Use first precipitation value from data
+                    initial_guess.append(data_df['pr'].iloc[0])
+                    print(f"DEBUG: Using first pr value as Ktfp_pr0 initial guess: {data_df['pr'].iloc[0]:.2f}")
+                else:
+                    initial_guess.append(param_definitions[param]['initial'])
             else:
                 print(f"WARNING: Unknown parameter '{param}' in params_to_optimize")
                 # Use default bounds and initial guess for unknown parameters
@@ -796,6 +789,10 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
         else:
             complete_params['_co2_df'] = None
         
+        # Add step information to complete_params
+        if step is not None:
+            complete_params['step'] = step
+        
         # Run optimization
         print(f"DEBUG: Starting optimization with {len(params_to_optimize)} parameters")
         print(f"DEBUG: Initial guess: {initial_guess}")
@@ -816,16 +813,7 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
         test_mse = np.mean((test_results['NPP'] - data_df['npp'])**2)
         print(f"DEBUG: Initial MSE: {test_mse:.6f}")
         
-        # Test objective function with slightly different alpha
-        if 'alpha' in params_to_optimize:
-            alpha_idx = params_to_optimize.index('alpha')
-            test_alpha = initial_guess[alpha_idx] + 0.1
-            test_params['alpha'] = test_alpha
-            test_results2 = run_bgc_simulation(data_df, test_params, co2_df)
-            test_mse2 = np.mean((test_results2['NPP'] - data_df['npp'])**2)
-            print(f"DEBUG: MSE with alpha={test_alpha}: {test_mse2:.6f}")
-            print(f"DEBUG: MSE difference: {abs(test_mse2 - test_mse):.6f}")
-            print(f"DEBUG: Is MSE difference significant? {abs(test_mse2 - test_mse) > 1e-6}")
+
         print(f"DEBUG: Parameters to optimize: {params_to_optimize}")
         print(f"DEBUG: Fixed parameters: {list(fixed_params.keys())}")
         print(f"DEBUG: Initial guess: {initial_guess}")
@@ -833,13 +821,9 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
         initial_mse = objective_function(initial_guess, data_df, params_to_optimize, complete_params)
         print(f"DEBUG: Initial objective value: {initial_mse}")
         
-        # Test a few different alpha values manually to see if the function changes
-        test_alphas = [0.3, 0.5, 0.7]
-        for test_alpha in test_alphas:
-            test_params = complete_params.copy()
-            test_params['alpha'] = test_alpha
-            test_mse = objective_function([test_alpha], data_df, params_to_optimize, complete_params)
-            print(f"DEBUG: Manual test - alpha={test_alpha:.1f}, MSE={test_mse:.6f}")
+
+        
+
         
         result = optimize.minimize(
             objective_function,
@@ -854,13 +838,17 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
         print(f"DEBUG: Final objective value: {result.fun}")
         print(f"DEBUG: Number of iterations: {result.nit}")
         print(f"DEBUG: Number of function evaluations: {result.nfev}")
-        print(f"DEBUG: Final parameter values: {result.x}")
-        print(f"DEBUG: Why optimizer stopped: {result.message}")
+
         
         if result.success:
             # Create complete parameter dictionary with optimized values
             optimized_params = fixed_params.copy()
             optimized_params.update(dict(zip(params_to_optimize, result.x)))
+            
+            # Debug: Print optimized parameter values
+            print(f"DEBUG: Optimized parameter values:")
+            for param, value in zip(params_to_optimize, result.x):
+                print(f"  {param}: {value}")
             
             # Add derived parameters (only if not already provided)
             alpha = optimized_params.get('alpha', 0.5)
@@ -868,11 +856,15 @@ def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None):
             if 'Cland_init' not in optimized_params:
                 optimized_params['Cland_init'] = first_guess_user_params(data_df, alpha, Ksoil)
             
-            # Recalculate Ktfp_0 for the final simulation using optimized alpha
-            gpp_mean = data_df['gpp'].mean()
-            Cland_0 = optimized_params['Cland_init']
-            optimized_params['Ktfp_0'] = gpp_mean / (Cland_0 ** alpha)
-            print(f"DEBUG: Final simulation - alpha={alpha:.4f}, Ktfp_0={optimized_params['Ktfp_0']:.4f}")
+            # Recalculate Ktfp_0 for the final simulation using optimized alpha (only for Step 1)
+            # In Step 2 and beyond, we should use the inherited Ktfp_0 from previous steps
+            if 'step' in complete_params and complete_params['step'] == 'step1':
+                gpp_mean = data_df['gpp'].mean()
+                Cland_0 = optimized_params['Cland_init']
+                optimized_params['Ktfp_0'] = gpp_mean / (Cland_0 ** alpha)
+                print(f"DEBUG: Final simulation - alpha={alpha:.4f}, Ktfp_0={optimized_params['Ktfp_0']:.4f}")
+            else:
+                print(f"DEBUG: Final simulation - using inherited Ktfp_0={optimized_params.get('Ktfp_0', 'NOT_FOUND'):.4f}")
             
             # Run final simulation
             print(f"DEBUG: Final simulation parameters: {optimized_params}")
@@ -936,6 +928,7 @@ def save_fitted_parameters(all_fitted_params, step, single_file=True):
     
     if single_file:
         # Save all parameters to one file
+
         all_params_df = pd.DataFrame(all_fitted_params)
         
         # Ensure all standard columns exist (set to 0 if missing)
@@ -1088,7 +1081,7 @@ def run_single_region_model_clean(region, model, step, fixed_params, params_to_o
         # Run optimization
         print(f"Running optimization for {region} / {model} (Step {step})")
         success, optimized_params, results_df, optimization_info = optimize_parameters(
-            fixed_params, params_to_optimize, filtered_df, co2_df
+            fixed_params, params_to_optimize, filtered_df, co2_df, step
         )
         
         if success:

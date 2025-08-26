@@ -126,12 +126,17 @@ def run_step2_analysis(args, regions_to_run, models_to_run, step1_params=None, a
                     'Kresp_0': step1_param_dict.get('Kresp_0', step_params.get('Kresp_0')),
                     'Ktfp_0': step1_param_dict.get('Ktfp_0', step_params.get('Ktfp_0')),
                     'alpha': step1_param_dict.get('alpha', step_params.get('alpha')),
+                    'Cland_init': step1_param_dict.get('Cland_init', step_params.get('Cland_init')),
                     'Ktfp_tas0': step1_param_dict.get('Ktfp_tas0', 0.0),
                     'Ktfp_tas1': step1_param_dict.get('Ktfp_tas1', 0.0),
                     'Ktfp_pr0': step1_param_dict.get('Ktfp_pr0', 0.0),
                     'Ktfp_pr1': step1_param_dict.get('Ktfp_pr1', 0.0)
                 })
                 print(f"Using Step 1 parameters for {region} / {model}")
+
+            else:
+                print(f"WARNING: No Step 1 parameters found for {region} / {model}")
+                print(f"DEBUG: Available Step 1 parameter keys: {list(step1_params.keys()) if step1_params else 'None'}")
             
             # For Step 2, we should only optimize Ktfp_co2 if it's not already provided
             region_params_to_optimize = []
@@ -145,6 +150,15 @@ def run_step2_analysis(args, regions_to_run, models_to_run, step1_params=None, a
             
             if success:
                 successful_runs += 1
+                
+                # Debug: Print the actual optimized parameters before saving
+                print(f"DEBUG: Final optimized parameters for {region}/{model}:")
+                for key, value in param_dict.items():
+                    if key in ['Ktfp_co2', 'Ksoil_0', 'Kresp_0', 'Ktfp_0', 'alpha', 'Cland_init']:
+                        print(f"  {key}: {value}")
+                
+
+                
                 all_fitted_params.append(param_dict)
                 
                 # Save individual results

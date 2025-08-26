@@ -245,6 +245,9 @@ python main.py --step all --Ksoil_0 0.1 --region "Zimbabwe" --model "ACCESS-ESM1
 
 # Run for multiple regions
 python main.py --step all --regions "Zimbabwe" "Zambia" --models "ACCESS-ESM1-5"
+
+# Recommended test command for code functionality (multiple regions with fixed alpha)
+python main.py --Ksoil_0 0.025 --alpha=-0.5 --regions "China" "Canada" "Brazil" "Zimbabwe" --model "ACCESS-ESM1-5"
 ```
 
 ### 4. Run with Fixed Parameters

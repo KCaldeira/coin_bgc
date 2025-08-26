@@ -108,6 +108,11 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
                     'Cland_init': Cland_0,
                     'alpha': optimal_alpha,
                     'Ktfp_0': gpp_mean / (Cland_0 ** optimal_alpha),  # Recalculate for optimal alpha
+                    # Step 1 doesn't fit climate sensitivity parameters - set to 0 for inheritance
+                    'Ktfp_tas0': 0.0,
+                    'Ktfp_tas1': 0.0,
+                    'Ktfp_pr0': 0.0,
+                    'Ktfp_pr1': 0.0,
                     'region': region,
                     'model': model,
                     'step': 'step1'

@@ -51,7 +51,7 @@ def run_complete_analysis(args, step):
             # Use the most recent Step 1 file
             latest_step1 = sorted(step1_files)[-1]
             step1_filepath = os.path.join("data/output", latest_step1)
-            step1_params = load_step1_parameters(step1_filepath)
+            step1_params = load_step_parameters_from_file(step1_filepath)
         
         all_fitted_params, successful_runs, failed_runs = run_step2_analysis(args, regions_to_run, models_to_run, step1_params)
     elif step == "step3":
