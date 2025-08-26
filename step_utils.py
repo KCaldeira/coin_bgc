@@ -253,8 +253,8 @@ def analyze_steady_state_data(data_df):
     
     Returns:
         dict: Dictionary containing calculated steady-state parameters
-            - Kresp_0: Calculated from npp_mean / gpp_mean
-            - Cland_0: Calculated from (1 - Kresp_0) * gpp_mean / Ksoil_0
+            - Kresp_0: Calculated from (gpp_mean - npp_mean) / gpp_mean
+            - Cland_0: Calculated from npp_mean / Ksoil_0
             - gpp_mean: Mean GPP from data
             - npp_mean: Mean NPP from data
     """
@@ -263,7 +263,9 @@ def analyze_steady_state_data(data_df):
     npp_mean = data_df['npp'].mean()
     
     # Calculate Kresp_0 from steady-state assumption
-    Kresp_0 = npp_mean / gpp_mean
+    # NPP = GPP - Presp = GPP - Kresp_0 * GPP = GPP * (1 - Kresp_0)
+    # So: Kresp_0 = (GPP - NPP) / GPP
+    Kresp_0 = (gpp_mean - npp_mean) / gpp_mean
     
     print(f"Steady-state analysis:")
     print(f"  Mean GPP: {gpp_mean:.4f} kg C m⁻² yr⁻¹")

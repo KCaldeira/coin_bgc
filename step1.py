@@ -56,8 +56,14 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
                 gpp_mean = steady_state_results['gpp_mean']
                 
                 # Calculate Cland_0 from steady-state
-                Cland_0 = (1 - Kresp_0) * gpp_mean / args.Ksoil_0
+                # At steady-state: NPP = Ksoil_0 * Cland_0
+                # So: Cland_0 = NPP / Ksoil_0
+                # Note: (1 - Kresp_0) * gpp_mean = npp_mean, so this is equivalent to the original calculation
+                npp_mean = steady_state_results['npp_mean']
+                Cland_0 = npp_mean / args.Ksoil_0
                 print(f"  Calculated Cland_0: {Cland_0:.4f} kg C m⁻²")
+                print(f"  Verification: Ksoil_0 * Cland_0 = {args.Ksoil_0:.4f} * {Cland_0:.4f} = {args.Ksoil_0 * Cland_0:.4f}")
+                print(f"  Target NPP: {npp_mean:.4f}")
                 
                 # Calculate Ktfp_0 from steady-state (using alpha=0.5 as initial guess)
                 # At steady-state: GPP = Ktfp_0 * Cland_0 ** alpha
@@ -67,6 +73,8 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
                 print(f"  Calculated Ktfp_0: {Ktfp_0:.4f} (using alpha={alpha_guess})")
                 print(f"  Verification: Ktfp_0 * Cland_0^{alpha_guess} = {Ktfp_0:.4f} * {Cland_0:.4f}^{alpha_guess} = {Ktfp_0 * (Cland_0 ** alpha_guess):.4f}")
                 print(f"  Target GPP: {gpp_mean:.4f}")
+                print(f"  Steady-state check: NPP = (1-Kresp_0) * GPP = {(1-Kresp_0):.4f} * {gpp_mean:.4f} = {(1-Kresp_0) * gpp_mean:.4f}")
+                print(f"  Steady-state check: NPP = Ksoil_0 * Cland_0 = {args.Ksoil_0:.4f} * {Cland_0:.4f} = {args.Ksoil_0 * Cland_0:.4f}")
                 
                 # Build fixed parameters dictionary
                 fixed_params = {
@@ -109,6 +117,13 @@ def run_step1_analysis(args, regions_to_run, models_to_run):
                 
                 # Run final simulation to verify fit
                 print(f"\n=== Running Final Simulation for Verification ===")
+                print(f"DEBUG: Simulation parameters:")
+                print(f"  Ksoil_0: {param_dict['Ksoil_0']:.6f}")
+                print(f"  Kresp_0: {param_dict['Kresp_0']:.6f}")
+                print(f"  Ktfp_0: {param_dict['Ktfp_0']:.6f}")
+                print(f"  alpha: {param_dict['alpha']:.6f}")
+                print(f"  Cland_init: {param_dict['Cland_init']:.6f}")
+                print(f"  use_observed_npp_for_cland: True")
                 results_df = run_bgc_simulation(data_df, param_dict, use_observed_npp_for_cland=True)
                 
                 success = True
