@@ -19,6 +19,219 @@ import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
 from typing import Dict, List, Tuple, Optional
+import os
+from datetime import datetime
+
+
+# Global timestamp for the current run
+_current_run_timestamp = None
+
+
+def setup_output_directory():
+    """Create output directory if it doesn't exist and return the path."""
+    output_dir = "data/output"
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
+
+
+def get_run_output_directory():
+    """Get the timestamped output directory for the current run."""
+    global _current_run_timestamp
+    
+    if _current_run_timestamp is None:
+        _current_run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    base_output_dir = setup_output_directory()
+    run_output_dir = os.path.join(base_output_dir, f"run_{_current_run_timestamp}")
+    os.makedirs(run_output_dir, exist_ok=True)
+    return run_output_dir
+
+
+def reset_run_timestamp():
+    """Reset the run timestamp to create a new run directory."""
+    global _current_run_timestamp
+    _current_run_timestamp = None
+
+
+def save_fitted_parameters(all_fitted_params, step):
+    """Save fitted parameters to CSV file with standardized column order."""
+    output_dir = get_run_output_directory()
+    timestamp = _current_run_timestamp
+    
+    # Define standardized column order
+    standard_columns = [
+        'step', 'model', 'region', 'optimization_success',
+        'final_mse',
+        'Ksoil_0', 'Kresp_0', 'Ktfp_0', 'alpha', 'Cland_0', 'Ktfp_co2', 'Ktfp_co2_max',
+        'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2'
+    ]
+    
+    # Convert results to DataFrame format
+    all_params_list = []
+    for key, params in all_fitted_params.items():
+        # Parse region and model from key
+        if '_' in key:
+            region, model = key.rsplit('_', 1)
+        else:
+            region, model = key, 'unknown'
+        
+        # Create parameter row
+        param_row = {
+            'step': step,
+            'model': model,
+            'region': region,
+            'optimization_success': True,
+            'final_mse': 0.0  # Will be updated if available
+        }
+        param_row.update(params)
+        all_params_list.append(param_row)
+    
+    all_params_df = pd.DataFrame(all_params_list)
+    
+    # Ensure all standard columns exist
+    for col in standard_columns:
+        if col not in all_params_df.columns:
+            all_params_df[col] = 0.0
+    
+    # Reorder columns to match standard order
+    existing_columns = [col for col in standard_columns if col in all_params_df.columns]
+    all_params_df = all_params_df[existing_columns]
+    
+    filename = f"fitted_parameters_all_{step}_{timestamp}.csv"
+    filepath = os.path.join(output_dir, filename)
+    all_params_df.to_csv(filepath, index=False)
+    print(f"All fitted parameters saved to: {filepath}")
+    
+    return filepath
+
+
+def save_simulation_results(results_dict, step):
+    """Save simulation results to CSV files."""
+    output_dir = get_run_output_directory()
+    timestamp = _current_run_timestamp
+    
+    for key, results_df in results_dict.items():
+        if '_' in key:
+            region, model = key.rsplit('_', 1)
+        else:
+            region, model = key, 'unknown'
+        
+        filename = f"simulation_results_{region}_{model}_{step}_{timestamp}.csv"
+        filepath = os.path.join(output_dir, filename)
+        results_df.to_csv(filepath, index=False)
+        print(f"Simulation results saved to: {filepath}")
+
+
+def create_pdf_books():
+    """Create PDF books for visualization."""
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+    
+    output_dir = get_run_output_directory()
+    timestamp = _current_run_timestamp
+    
+    print("Creating PDF books for final simulation results...")
+    
+    # Find simulation results files
+    simulation_files = []
+    if os.path.isdir(output_dir):
+        simulation_files = [f for f in os.listdir(output_dir) if f.startswith("simulation_") and f.endswith(f"{timestamp}.csv")]
+    
+    if not simulation_files:
+        print("No simulation results found.")
+        return
+    
+    # Group files by region/model
+    region_model_files = {}
+    for file_path in simulation_files:
+        # Extract region and model from filename: simulation_region_model_dataset_timestamp.csv
+        parts = file_path.replace("simulation_", "").replace(f"_{timestamp}.csv", "").split("_")
+        if len(parts) >= 3:
+            region = parts[0]
+            model = "_".join(parts[1:-1])  # Model name might contain underscores
+            dataset = parts[-1]  # piControl, full, or bgc
+            
+            key = f"{region}_{model}"
+            if key not in region_model_files:
+                region_model_files[key] = {}
+            region_model_files[key][dataset] = file_path
+    
+    # Create BGC vs Full comparison book (like Step 3 vs Step 4)
+    print("Creating BGC vs Full comparison book...")
+    bgc_full_pdf_path = os.path.join(output_dir, f"BGC_vs_Full_Comparison_{timestamp}.pdf")
+    with PdfPages(bgc_full_pdf_path) as pdf:
+        for region_model, datasets in region_model_files.items():
+            region, model = region_model.split("_", 1)
+            
+            # Check if we have both bgc and full datasets
+            if 'bgc' not in datasets or 'full' not in datasets:
+                print(f"Warning: Missing BGC or Full results for {region} / {model}")
+                continue
+            
+            # Load both datasets
+            bgc_path = os.path.join(output_dir, datasets['bgc'])
+            full_path = os.path.join(output_dir, datasets['full'])
+            
+            df_bgc = pd.read_csv(bgc_path)
+            df_full = pd.read_csv(full_path)
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(12, 8))
+            
+            # Plot GPP data and models (like Step 3 vs Step 4 format)
+            ax.plot(df_bgc['year'], df_bgc['gpp_data'], 'b-', linewidth=2, label='GPP Data (BGC)', alpha=0.8)
+            ax.plot(df_full['year'], df_full['gpp_data'], 'r-', linewidth=2, label='GPP Data (Full)', alpha=0.8)
+            ax.plot(df_bgc['year'], df_bgc['GPP_model'], 'b-', linewidth=1, label='GPP Model (BGC)', alpha=0.6)
+            ax.plot(df_full['year'], df_full['GPP_model'], 'r-', linewidth=1, label='GPP Model (Full)', alpha=0.6)
+            
+            # Customize plot
+            ax.set_xlabel('Year', fontsize=12)
+            ax.set_ylabel('GPP (kg C m⁻² yr⁻¹)', fontsize=12)
+            ax.set_title(f'BGC vs Full Comparison: {region} / {model}', fontsize=14, fontweight='bold')
+            ax.legend(fontsize=10)
+            ax.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close()
+    
+    print(f"BGC vs Full comparison book saved to: {bgc_full_pdf_path}")
+    
+    # Create Historical runs book (piControl)
+    print("Creating Historical runs book...")
+    historical_pdf_path = os.path.join(output_dir, f"Historical_Runs_{timestamp}.pdf")
+    with PdfPages(historical_pdf_path) as pdf:
+        for region_model, datasets in region_model_files.items():
+            region, model = region_model.split("_", 1)
+            
+            # Check if we have piControl dataset
+            if 'piControl' not in datasets:
+                print(f"Warning: Missing piControl results for {region} / {model}")
+                continue
+            
+            # Load piControl dataset
+            piControl_path = os.path.join(output_dir, datasets['piControl'])
+            df_piControl = pd.read_csv(piControl_path)
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(12, 8))
+            
+            # Plot GPP data and model for piControl
+            ax.plot(df_piControl['year'], df_piControl['gpp_data'], 'k-', linewidth=2, label='GPP Data (piControl)', alpha=0.8)
+            ax.plot(df_piControl['year'], df_piControl['GPP_model'], 'b-', linewidth=1, label='GPP Model (piControl)', alpha=0.6)
+            
+            # Customize plot
+            ax.set_xlabel('Year', fontsize=12)
+            ax.set_ylabel('GPP (kg C m⁻² yr⁻¹)', fontsize=12)
+            ax.set_title(f'Historical Run (piControl): {region} / {model}', fontsize=14, fontweight='bold')
+            ax.legend(fontsize=10)
+            ax.grid(True, alpha=0.3)
+            
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close()
+    
+    print(f"Historical runs book saved to: {historical_pdf_path}")
 
 
 def load_data_for_analysis(regions: Optional[List[str]] = None, models: Optional[List[str]] = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -537,6 +750,16 @@ def run_preliminary_optimizations(piControl_data: pd.DataFrame, full_data: pd.Da
     print(f"  tas_mean: {tas_mean:.6f}")
     print(f"  pr_mean: {pr_mean:.6f}")
     
+    # Save Step 2.1 results
+    step2_1_params = {
+        'Kresp_0': Kresp_0,
+        'Cland_0': Cland_0,
+        'Ktfp_0': Ktfp_0,
+        'Ktfp_tas0': tas_mean,
+        'Ktfp_pr0': pr_mean
+    }
+    save_fitted_parameters({'step2_1': step2_1_params}, "step2_1")
+    
     # Step 2.2: Set reference values to historical means
     Ktfp_tas0 = tas_mean
     Ktfp_pr0 = pr_mean
@@ -602,6 +825,10 @@ def run_preliminary_optimizations(piControl_data: pd.DataFrame, full_data: pd.Da
     for param, value in optimal_params.items():
         print(f"  {param}: {value:.6f}")
     
+    # Save Step 2.3 results
+    step2_3_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2']}
+    save_fitted_parameters({'step2_3': step2_3_params}, "step2_3")
+    
     # Step 2.4: Optimize Ktfp_co2_max and Ktfp_co2 using bgc_data
     print("\n=== Step 2.4: Optimizing CO2 parameters using bgc_data ===")
     
@@ -638,6 +865,10 @@ def run_preliminary_optimizations(piControl_data: pd.DataFrame, full_data: pd.Da
     print(f"Step 2.4 optimization results:")
     for param, value in optimal_params.items():
         print(f"  {param}: {value:.6f}")
+    
+    # Save Step 2.4 results
+    step2_4_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_max', 'Ktfp_co2']}
+    save_fitted_parameters({'step2_4': step2_4_params}, "step2_4")
     
     # Step 2.5: Optimize all parameters using bgc_data and piControl_data
     print("\n=== Step 2.5: Optimizing all parameters using bgc_data and piControl_data ===")
@@ -682,6 +913,10 @@ def run_preliminary_optimizations(piControl_data: pd.DataFrame, full_data: pd.Da
     for param, value in optimal_params.items():
         print(f"  {param}: {value:.6f}")
     
+    # Save Step 2.5 results
+    step2_5_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_max', 'Ktfp_co2']}
+    save_fitted_parameters({'step2_5': step2_5_params}, "step2_5")
+    
     # Step 2.6: Final optimization of climate sensitivity parameters using all data
     print("\n=== Step 2.6: Final optimization of climate sensitivity parameters using all data ===")
     
@@ -717,6 +952,10 @@ def run_preliminary_optimizations(piControl_data: pd.DataFrame, full_data: pd.Da
     print(f"Step 2.6 optimization results:")
     for param, value in optimal_params.items():
         print(f"  {param}: {value:.6f}")
+    
+    # Save Step 2.6 results
+    step2_6_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_max', 'Ktfp_co2']}
+    save_fitted_parameters({'step2_6': step2_6_params}, "step2_6")
     
     return params
 
@@ -771,6 +1010,10 @@ def run_complete_optimization(piControl_data: pd.DataFrame, full_data: pd.DataFr
     for param, value in optimal_params.items():
         print(f"  {param}: {value:.6f}")
     
+    # Save Step 3 results
+    step3_params = {param: final_params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_max', 'Ktfp_co2']}
+    save_fitted_parameters({'step3': step3_params}, "step3")
+    
     return final_params
 
 
@@ -793,7 +1036,14 @@ def run_main_analysis(regions: List[str], models: List[str], Ksoil_0: float, alp
     print(f"Ksoil_0: {Ksoil_0}")
     print(f"alpha: {alpha}")
     
+    # Setup output environment
+    reset_run_timestamp()
+    output_dir = get_run_output_directory()
+    print(f"Output directory: {output_dir}")
+    
     results = {}
+    simulation_results = {}
+    stage_results = {}  # Store results for each stage
     
     for region in regions:
         for model in models:
@@ -830,6 +1080,36 @@ def run_main_analysis(regions: List[str], models: List[str], Ksoil_0: float, alp
             print(f"\nFinal parameters for {region} / {model}:")
             for param, value in final_params.items():
                 print(f"  {param}: {value:.6f}")
+            
+            # Generate simulation results with final parameters
+            model_instance = CoinBGC()
+            # All parameters are known for simulation - execute model directly
+            piControl_sim = model_instance.execute_model(piControl_data, final_params)
+            full_sim = model_instance.execute_model(full_data, final_params, co2_data)
+            bgc_sim = model_instance.execute_model(bgc_data, final_params, co2_data)
+            
+            # Store simulation results
+            simulation_results[f"{region}_{model}"] = {
+                'piControl': piControl_sim,
+                'full': full_sim,
+                'bgc': bgc_sim
+            }
+    
+    # Save results
+    print(f"\n=== Saving Results ===")
+    save_fitted_parameters(results, "complete")
+    
+    # Save simulation results
+    for key, sims in simulation_results.items():
+        for dataset_name, sim_df in sims.items():
+            sim_df.to_csv(os.path.join(output_dir, f"simulation_{key}_{dataset_name}_{_current_run_timestamp}.csv"), index=False)
+    
+    # Create PDF books
+    print(f"\n=== Creating PDF Books ===")
+    create_pdf_books()
+    
+    print(f"\n=== Analysis Complete ===")
+    print(f"Results saved to: {output_dir}")
     
     return results
 

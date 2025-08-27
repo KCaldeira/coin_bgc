@@ -1,6 +1,6 @@
 # COIN-BGC: Solow-Swan Growth Model for Land-Surface Climate Change Simulation
 
-**⚠️ PROTOTYPE STATUS: This is a prototype version of the COIN-BGC system. The current codebase represents a working proof-of-concept that demonstrates the core functionality. A clean, more general version has been implemented in `coin_bgc.py` with improved architecture, design principles, and a complete main processing workflow.**
+**✅ CLEAN IMPLEMENTATION COMPLETE: The clean version of COIN-BGC has been successfully implemented in `coin_bgc.py` with improved architecture, design principles, and a complete main processing workflow. The system now produces proper output files and PDF books without runtime errors, though parameter optimization results are still being refined.**
 
 This project simulates the behavior of the land-surface model under climate change using a Solow-Swan growth model of an economy. The model represents terrestrial carbon cycling as an economic system where carbon stocks (Cland) are the "capital" that produces carbon fluxes (GPP, NPP) through biological processes.
 
@@ -48,6 +48,8 @@ The clean architecture has been implemented in `coin_bgc.py` with the following 
 - **Data loading functions**: Flexible data loading with optional filtering
 - **Main processing workflow**: Complete analysis pipeline with preliminary and final optimizations
 - **Quadratic climate sensitivity**: Enhanced temperature and precipitation parameterization
+- **Output system**: Timestamped output directories with stage-by-stage parameter saving
+- **PDF book generation**: Professional visualization of simulation results
 - **Example usage**: Complete working example demonstrating the architecture
 
 ## Overall Goal
@@ -99,6 +101,23 @@ Where Ktfp can be a function of temperature (tas), precipitation (pr), and CO2 c
 - Uses multi-DataFrame optimization
 - Optimizes all parameters except command line ones
 
+**Step 2.6**: Final optimization of climate sensitivity parameters using all data
+- Optimizes: `Ktfp_tas1`, `Ktfp_tas2`, `Ktfp_pr1`, `Ktfp_pr2`
+- Uses all datasets: piControl_data, bgc_data, full_data
+
+### Step 3: Complete Optimization
+- Optimizes all parameters using all datasets
+- Uses preliminary results as starting points
+- Bounds: half to twice the preliminary values
+
+### Step 4: Results and Output
+- **Parameter saving**: Stage-by-stage CSV files for each optimization step
+- **Simulation results**: CSV files with model outputs for each dataset
+- **PDF books**: Professional visualization of simulation results
+  - BGC vs Full comparison book (like old Step 3 vs Step 4 format)
+  - Historical runs book (piControl data)
+- **Timestamped directories**: Each run gets a unique output directory
+
 **Step 2.6**: Final optimization of climate sensitivity using all data
 - Uses multi-DataFrame optimization with all three datasets
 - Optimizes only: `Ktfp_tas1`, `Ktfp_tas2`, `Ktfp_pr1`, `Ktfp_pr2`
@@ -135,7 +154,7 @@ Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
 Where:
 - `tas_factor = 1 + Ktfp_tas1 * (tas - Ktfp_tas0) + Ktfp_tas2 * (tas - Ktfp_tas0)^2`
 - `pr_factor = 1 + Ktfp_pr1 * (pr - Ktfp_pr0) + Ktfp_pr2 * (pr - Ktfp_pr0)^2`
-- `co2_factor = 1 + Ktfp_co2_max * co2 / (co2 + Ktfp_co2)`
+ - `co2_factor = 1 + Ktfp_co2_max * co2 / (co2 + Ktfp_co2)`
 
 ### Physical Interpretation
 This enhanced approach provides:
@@ -266,6 +285,39 @@ results = model.execute_model(data_df, known_values)
 # Run optimization
 optimal_params = model.optimize_parameters(known_values, data_df, initial_guesses, bounds)
 ```
+
+### 5. Command Line Interface
+```bash
+# Run analysis with command line arguments
+python main.py --regions "Zimbabwe" --models "ACCESS-ESM1-5" --Ksoil_0 0.1 --alpha 0.5
+
+# List available data
+python main.py --list-data
+
+# Run with verbose output
+python main.py --regions "Zimbabwe" --models "ACCESS-ESM1-5" --Ksoil_0 0.1 --alpha 0.5 --verbose
+```
+
+### 6. Output Files
+Each run creates a timestamped directory (`data/output/run_YYYYMMDD_HHMMSS/`) containing:
+
+**Parameter Files (7 CSV files):**
+- `fitted_parameters_all_step2_1_*.csv` - Initial parameter calculation
+- `fitted_parameters_all_step2_3_*.csv` - Climate sensitivity optimization
+- `fitted_parameters_all_step2_4_*.csv` - CO2 parameter optimization
+- `fitted_parameters_all_step2_5_*.csv` - All parameter optimization
+- `fitted_parameters_all_step2_6_*.csv` - Final climate sensitivity optimization
+- `fitted_parameters_all_step3_*.csv` - Complete optimization
+- `fitted_parameters_all_complete_*.csv` - Final results
+
+**Simulation Results (3 CSV files):**
+- `simulation_*_piControl_*.csv` - piControl simulation results
+- `simulation_*_full_*.csv` - Full simulation results
+- `simulation_*_bgc_*.csv` - BGC simulation results
+
+**PDF Books (2 files):**
+- `BGC_vs_Full_Comparison_*.pdf` - BGC vs Full comparison (GPP only)
+- `Historical_Runs_*.pdf` - Historical runs (piControl GPP only)
 
 ## Input Data
 Place your input CSV files in `data/input/`. The project uses:

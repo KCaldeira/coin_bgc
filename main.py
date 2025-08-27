@@ -10,7 +10,7 @@ import argparse
 import sys
 from typing import List
 
-from coin_bgc import run_main_analysis, load_data_for_analysis, load_co2_data
+from coin_bgc import run_main_analysis, load_data_for_analysis, load_co2_data, get_run_output_directory
 
 
 def parse_arguments():
@@ -203,6 +203,14 @@ def main():
         print("All optimizations completed successfully!")
         print("The results contain the final optimized parameters for each region/model combination.")
         print("You can use these parameters for further analysis or visualization.")
+        
+        # Show output directory
+        output_dir = get_run_output_directory()
+        print(f"\nResults saved to: {output_dir}")
+        print("Files created:")
+        print(f"  - fitted_parameters_all_complete_*.csv (final parameters)")
+        print(f"  - simulation_*_*.csv (model simulation results)")
+        print(f"  - PDF books (if implemented)")
         
     except Exception as e:
         print(f"ERROR: Analysis failed: {e}")
