@@ -149,7 +149,7 @@ class CoinBGC:
         ]
         
         # Reference CO2 concentration (pre-industrial)
-        self.co2_0 = 284.318604  # ppm
+        self.co2_0 = 284.317  # ppm
         
     def set_parameter_sets(self, knowns: List[str], unknowns: List[str]) -> None:
         """
