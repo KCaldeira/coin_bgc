@@ -1,6 +1,54 @@
 # COIN-BGC: Solow-Swan Growth Model for Land-Surface Climate Change Simulation
 
+**⚠️ PROTOTYPE STATUS: This is a prototype version of the COIN-BGC system. The current codebase represents a working proof-of-concept that demonstrates the core functionality. A clean, more general version has been implemented in `coin_bgc.py` with improved architecture, design principles, and a complete main processing workflow.**
+
 This project simulates the behavior of the land-surface model under climate change using a Solow-Swan growth model of an economy. The model represents terrestrial carbon cycling as an economic system where carbon stocks (Cland) are the "capital" that produces carbon fluxes (GPP, NPP) through biological processes.
+
+## Prototype to Production: Next Version Design Principles
+
+The next version of COIN-BGC will be built with the following design principles:
+
+### More General and More Specific
+- **More General**: Basic routines will be made as general as possible for reusability
+- **More Specific**: Code will be written for one specific use case, but designed for easy adaptation to other use cases
+- **No Conditional Clutter**: Avoid cluttering code with conditional statements
+- **Clean Code Philosophy**: Minimal conditionals, explicit parameter requirements, no hidden assumptions
+
+### Central Design: Three Lists of Keys
+The new version will be built around three fundamental lists of keys:
+
+1. **`knowns`** - Variables to be specified in an optimization (user-provided parameters)
+2. **`unknowns`** - Variables to be optimized for (parameters to be determined)
+3. **`universe`** - Complete set of variables (all possible parameters)
+
+### Core Architecture
+The clean version implements two fundamental routines:
+
+1. **Basic Model Execution Routine**: 
+   - Executes the model from start year to end year
+   - Takes a pandas DataFrame and a dictionary of parameter values for the set of knowns
+   - Sets all variables not in `knowns` (i.e., `universe - knowns`) to 0.0
+
+2. **Optimization Routine**:
+   - Optimizes for the `unknowns` given the `knowns`
+   - Takes a pandas DataFrame and the known parameter values
+   - Returns optimal values for the unknown parameters
+
+This architecture provides a clean, modular foundation that can be easily adapted to different use cases without extensive code modifications.
+
+### Clean Implementation: `coin_bgc.py`
+The clean architecture has been implemented in `coin_bgc.py` with the following features:
+
+- **`CoinBGC` class**: Main class implementing the clean architecture
+- **Three lists of keys**: `knowns`, `unknowns`, and `universe` for parameter management
+- **`execute_model()`**: Basic model execution routine
+- **`optimize_parameters()`**: Single DataFrame optimization routine
+- **`optimize_parameters_multi()`**: Multi-DataFrame optimization routine
+- **Clean parameter management**: No conditional clutter, explicit parameter handling
+- **Data loading functions**: Flexible data loading with optional filtering
+- **Main processing workflow**: Complete analysis pipeline with preliminary and final optimizations
+- **Quadratic climate sensitivity**: Enhanced temperature and precipitation parameterization
+- **Example usage**: Complete working example demonstrating the architecture
 
 ## Overall Goal
 The overall goal of this effort is to simulate the behavior of the land-surface model under climate change using a Solow-Swan growth model of an economy. The system is under-determined by one parameter, so one parameter needs to be chosen a priori. The parameter that we will choose to specify is **Ksoil_0**, which is the inverse time constant for loss of carbon stock due to heterotrophic respiration.
@@ -21,185 +69,129 @@ The model treats terrestrial carbon cycling as an economic system:
 
 Where Ktfp can be a function of temperature (tas), precipitation (pr), and CO2 concentration.
 
-## Processing Steps
+## Main Processing Workflow
 
-### Step 1: Pre-industrial Parameter Fitting ✅ COMPLETED
-Fit the parameters of a Solow-Swan growth model to the results of a pre-industrial climate model simulation, assuming that the system does not respond at all to climate change.
+### Step 1: Data Loading
+- **Flexible data loading**: `load_data_for_analysis()` with optional region/model filtering
+- **Three datasets**: piControl_data, full_data (historical + SSP585), bgc_data (historical-bgc + SSP585-bgc)
+- **CO2 data loading**: `load_co2_data()` for historical and future CO2 concentrations
+- **No error checking**: Fail fast if data issues exist
 
-**Parameters fitted:**
-- Ksoil_0 (specified a priori)
-- Kresp_0 (plant respiration fraction) - calculated analytically from steady-state
-- Ktfp_0 (total factor productivity) - calculated analytically for each alpha
-- alpha (production function exponent) - optimized analytically
+### Step 2: Preliminary Optimizations
+**Step 2.1**: Calculate initial parameters from historical data means
+- `Kresp_0 = npp_mean / gpp_mean`
+- `Cland_0 = npp_mean / Ksoil_0`
+- `Ktfp_0 = gpp_mean / (Cland_0 ** alpha)`
 
-**Climate sensitivity parameters set to zero:**
-- Ktfp_tas0, Ktfp_tas1, Ktfp_pr0, Ktfp_pr1 = 0
+**Step 2.2**: Set reference values to historical means
+- `Ktfp_tas0 = tas_mean`
+- `Ktfp_pr0 = pr_mean`
 
-**Data used:** piControl simulation data
+**Step 2.3**: Optimize climate sensitivity parameters using historical data
+- Optimizes: `Cland_0`, `Ktfp_0`, `Ktfp_tas1`, `Ktfp_tas2`, `Ktfp_pr1`, `Ktfp_pr2`
+- Uses bounds: half to twice the initial values
 
-**✅ ANALYTICAL ALPHA OPTIMIZATION APPROACH:**
-Step 1 uses an analytical approach:
-1. **Steady-state analysis**: Calculate Kresp_0 and Cland_0 from time-mean data
-2. **Analytical Cland evolution**: Use observed NPP data to evolve Cland: `Cland[t+1] = Cland[t] + npp_data[t] - Ksoil_0 * Cland[t]`
-3. **GPP prediction**: Calculate predicted GPP for each alpha: `GPP[t] = Ktfp_0 * Cland[t]^alpha`
-4. **MSE minimization**: Find alpha that minimizes `MSE = mean((predicted_GPP - observed_GPP)²)`
+**Step 2.4**: Optimize CO2 parameters using bgc_data
+- Optimizes: `Ktfp_co2_max`, `Ktfp_co2`
+- Uses fixed bounds for CO2 parameters
 
-### Step 2: CO2 Fertilization Effect ✅ COMPLETED
-Use the SSP585bgc simulation (where the biosphere sees the CO2 increase but the physics of the climate system does not) to tune a parameter, **Ktfp_co2**, which indicates the sensitivity of Ktfp to CO2 increase.
+**Step 2.5**: Optimize all parameters using bgc_data and piControl_data
+- Uses multi-DataFrame optimization
+- Optimizes all parameters except command line ones
 
-**Parameters fitted:**
-- Ktfp_co2 (CO2 fertilization sensitivity)
+**Step 2.6**: Final optimization of climate sensitivity using all data
+- Uses multi-DataFrame optimization with all three datasets
+- Optimizes only: `Ktfp_tas1`, `Ktfp_tas2`, `Ktfp_pr1`, `Ktfp_pr2`
 
-**Parameters from Step 1 used as starting values:**
-- Ksoil_0, Kresp_0, Ktfp_0, alpha
+### Step 3: Complete Optimization
+- Takes preliminary results as starting points
+- Uses bounds: half to twice the preliminary values
+- Optimizes all parameters using all datasets
+- Only keeps command line parameters (`Ksoil_0`, `alpha`) as knowns
 
-**CO2-dependent Ktfp equation:**
-```
-Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
-```
-Where:
-- `co2_factor = 1 + (co2 - co2_0) / Ktfp_co2`
-- `co2_0 = 284.318604` ppm (pre-industrial reference concentration)
+### Step 4: Results and Reporting
+- Comprehensive parameter results for each region/model combination
+- Ready for visualization and analysis
+- Clean output format for further processing
 
-**Data used:** Concatenated historical + SSP585bgc simulation data + historical-SSP585 CO2 concentrations
+## Enhanced Climate Sensitivity Parameterization
 
-### Step 3: Climate Sensitivity Estimation ✅ COMPLETED
-Use the SSP585 simulation to estimate climate sensitivity parameters for temperature and precipitation effects on total factor productivity (Ktfp).
-
-**Parameters fitted:**
-- **Ktfp_tas0**: Reference temperature (°C) - first temperature value from data
-- **Ktfp_tas1**: Temperature sensitivity coefficient - fractional change in Ktfp per °C deviation from reference
-- **Ktfp_pr0**: Reference precipitation (mm/day) - first precipitation value from data  
-- **Ktfp_pr1**: Precipitation sensitivity coefficient - fractional change in Ktfp per mm/day deviation from reference
-
-**Parameters from Steps 1-2 used as starting values:**
-- Ksoil_0, Kresp_0, Ktfp_0, alpha, Ktfp_co2
-
-**Climate-dependent Ktfp equation:**
-```
-Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
-```
-Where:
-- `tas_factor = 1 + Ktfp_tas1 * (tas - Ktfp_tas0)`
-- `pr_factor = 1 + Ktfp_pr1 * (pr - Ktfp_pr0)`
-
-**Data used:** Concatenated historical + SSP585 simulation data
-
-**✅ OPTIMIZATION WORKING:** The optimization now successfully uses data-driven initial guesses and finds optimal solutions for climate sensitivity parameters.
-
-### Step 4: Validation ✅ COMPLETED
-Rerun Step 2's scenario (CO2 fertilization data) using all coefficients found in Step 3 (including climate sensitivities), without additional optimization.
-
-**Purpose:** Validate the complete model by testing it on the CO2 fertilization dataset with all fitted parameters from Steps 1-3.
-
-**No new parameters fitted:** All parameters from previous steps are used as fixed values.
-
-**Data used:** Same as Step 2 (concatenated historical + SSP585bgc simulation data)
-
-## Recent Improvements and Breakthroughs
-
-### Parameter Bounds Optimization ✅ RESOLVED
-**Issue**: Different regions have vastly different ecosystem characteristics, causing optimization to hit parameter bounds.
-
-**Solution**: Expanded parameter bounds to accommodate diverse ecosystem types:
-- **Ksoil_0**: (0.01, 0.99) → (0.001, 2.0) - For diverse soil respiration rates
-- **Ktfp_0**: (0, 10.0) → (0.1, 50.0) - For diverse productivity levels  
-- **alpha**: (0.1, 1.0) → (0, 1) - Standard production function bounds
-- **Ktfp_co2**: (0.0, 2000.0) → (0.0, 30.0) - Corrected units (multiplier on co2_0)
-- **Ktfp_pr0**: (1.0, 10.0) → (-10.0, 20.0) - Expanded for negative values
-
-**Results**: All regions now get physically meaningful parameter estimates without hitting bounds.
-
-### Data-Driven Initial Guesses ✅ IMPLEMENTED
-**Improvement**: Use actual data values for initial parameter guesses instead of fixed values.
-
-**Implementation**:
-- **Ktfp_tas0**: Uses first temperature value from data file as initial guess
-- **Ktfp_pr0**: Uses first precipitation value from data file as initial guess
-- **Other parameters**: Continue using predefined initial guesses
-
-**Benefits**:
-- More region-specific optimization
-- Better convergence due to realistic starting values
-- No need for generic global parameter estimates
-
-### Parameter Inheritance Fix ✅ RESOLVED
-**Issue**: Ktfp_0 was being recalculated in Step 2, causing GPP values to jump between steps.
-
-**Solution**: Made Ktfp_0 recalculation conditional - only happens in Step 1, not in Step 2 or beyond.
-
-**Results**: GPP values are now consistent between Step 1 and Step 2, with proper parameter inheritance.
-
-## New Climate Sensitivity Parameterization
-
-The project now uses a sophisticated climate sensitivity parameterization that separates reference climate states from sensitivity coefficients:
+The project now uses an advanced climate sensitivity parameterization that includes quadratic terms:
 
 ### Temperature Sensitivity
-- **Ktfp_tas0**: Reference temperature (°C) - first temperature value from data
-- **Ktfp_tas1**: Temperature sensitivity coefficient - represents fractional change in Ktfp per °C deviation from reference
+- **Ktfp_tas0**: Reference temperature (°C) - historical mean temperature
+- **Ktfp_tas1**: Linear temperature sensitivity coefficient
+- **Ktfp_tas2**: Quadratic temperature sensitivity coefficient
 
 ### Precipitation Sensitivity  
-- **Ktfp_pr0**: Reference precipitation (mm/day) - first precipitation value from data
-- **Ktfp_pr1**: Precipitation sensitivity coefficient - represents fractional change in Ktfp per mm/day deviation from reference
+- **Ktfp_pr0**: Reference precipitation (mm/day) - historical mean precipitation
+- **Ktfp_pr1**: Linear precipitation sensitivity coefficient
+- **Ktfp_pr2**: Quadratic precipitation sensitivity coefficient
+
+### Enhanced Ktfp Equation
+```
+Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
+```
+Where:
+- `tas_factor = 1 + Ktfp_tas1 * (tas - Ktfp_tas0) + Ktfp_tas2 * (tas - Ktfp_tas0)^2`
+- `pr_factor = 1 + Ktfp_pr1 * (pr - Ktfp_pr0) + Ktfp_pr2 * (pr - Ktfp_pr0)^2`
+- `co2_factor = 1 + Ktfp_co2_max * (co2 - co2_0) / Ktfp_co2`
 
 ### Physical Interpretation
-This approach is more physically meaningful because:
-- It separates the reference climate state from the sensitivity coefficients
-- It allows proper linearization around a reference point
-- The sensitivity coefficients are interpretable as fractional changes per unit deviation
-- It avoids issues with simple linear scaling that can lead to negative or unrealistic values
-
-### Parameter Bounds
-- **Ktfp_tas0**: (10.0, 30.0) °C - reasonable temperature range
-- **Ktfp_tas1**: (-0.99, 0.99) - fractional sensitivity bounds
-- **Ktfp_pr0**: (-10.0, 20.0) mm/day - expanded precipitation range
-- **Ktfp_pr1**: (-0.99, 0.99) - fractional sensitivity bounds
+This enhanced approach provides:
+- **Linear and quadratic responses**: Captures both linear and non-linear climate effects
+- **Better fit to data**: More flexible parameterization for complex climate responses
+- **Physical meaning**: Maintains interpretable sensitivity coefficients
+- **Robust optimization**: Better convergence with enhanced parameter space
 
 ## Code Architecture
 
-The project has been refactored into a modular structure with a clean parameter optimization approach:
+The project has been refactored into a clean, modular architecture:
 
-- **`main.py`**: Command-line interface and orchestration
-- **`step_utils.py`**: Shared utilities, BGC simulation, parameter optimization
-- **`step1.py`**: Pre-industrial parameter fitting
-- **`step2.py`**: CO2 fertilization effects
-- **`step3.py`**: Climate sensitivity estimation
-- **`step4.py`**: Validation step
-- **`plotting_utils.py`**: PDF book generation
+- **`coin_bgc.py`**: Complete clean implementation with main processing workflow
+  - **`CoinBGC` class**: Main class implementing the clean architecture
+  - **`load_data_for_analysis()`**: Flexible data loading with optional filtering
+  - **`load_co2_data()`**: CO2 concentration data loading
+  - **`run_preliminary_optimizations()`**: Complete Step 2 preliminary optimization pipeline
+  - **`run_complete_optimization()`**: Step 3 complete optimization
+  - **`run_main_analysis()`**: Main orchestrator for complete analysis workflow
+  - **`execute_model()`**: Basic model execution routine
+  - **`optimize_parameters()`**: Single DataFrame optimization
+  - **`optimize_parameters_multi()`**: Multi-DataFrame optimization
+  - **Clean parameter management**: No conditional clutter, explicit parameter handling
 
 ### New Clean Parameter Optimization Approach
 
 The project now uses a clean, explicit parameter management system:
 
 ```python
-def optimize_parameters(fixed_params, params_to_optimize, data_df, co2_df=None, step=None):
+def run_preliminary_optimizations(piControl_data, full_data, bgc_data, co2_data, Ksoil_0, alpha):
     """
-    Optimize parameters for BGC simulation using a clean, explicit approach.
-    
-    Args:
-        fixed_params (dict): Dictionary of parameter names and their fixed values
-        params_to_optimize (list): List of parameter names to optimize
-        data_df (pd.DataFrame): Data for fitting (must contain year, tas, pr, npp columns)
-        co2_df (pd.DataFrame, optional): CO2 concentration data
-        step (str, optional): Step identifier for conditional logic
+    Run preliminary optimizations to get starting points for complete optimization.
     """
+    # Step 2.1: Calculate initial parameters from historical data means
+    # Step 2.2: Set reference values to historical means
+    # Step 2.3: Optimize climate sensitivity parameters using historical data
+    # Step 2.4: Optimize CO2 parameters using bgc_data
+    # Step 2.5: Optimize all parameters using bgc_data and piControl_data
+    # Step 2.6: Final optimization of climate sensitivity using all data
 ```
 
 This approach makes parameter management much clearer and more maintainable.
 
 ## Features
-- **Multi-step analysis**: Sequential parameter fitting with inheritance between steps
-- **Multi-region processing**: Run simulations for all countries and models
-- **Smart parameter optimization**: Only optimize parameters not provided by user
-- **Batch processing**: Process multiple regions/models with single command
-- **CO2 integration**: Historical and future CO2 concentration data support
-- **Advanced climate sensitivity**: Sophisticated temperature and precipitation parameterization
-- **Comprehensive output**: Timestamped CSV files with all fitted parameters
-- **PDF visualization**: Automatic generation of PDF books for results visualization
-- **Virtual environment**: Isolated Python environment for dependencies
-- **Flexible parameter control**: Set specific parameters to zero while optimizing others
+- **Complete analysis pipeline**: From data loading to final optimization results
+- **Multi-DataFrame optimization**: Can optimize across multiple datasets simultaneously
+- **Enhanced climate sensitivity**: Quadratic temperature and precipitation responses
+- **Flexible data loading**: Optional filtering by regions and models
+- **Preliminary optimization pipeline**: Step-by-step approach for robust starting points
+- **Complete optimization pipeline**: Final optimization using all datasets
 - **Clean parameter management**: Explicit fixed vs. optimized parameter handling
-- **Data-driven initial guesses**: Use actual data values for parameter initialization
+- **Fail fast philosophy**: No error checking, immediate failure on issues
+- **Multi-region processing**: Run simulations for all countries and models
+- **CO2 integration**: Historical and future CO2 concentration data support
+- **Comprehensive output**: Clean output format for further processing
+- **Extensible**: Easy to modify by moving parameters between knowns and unknowns
 
 ## Getting Started
 
@@ -213,102 +205,114 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Run Individual Steps
-```bash
-# Step 1: Pre-industrial parameter fitting (Ksoil_0 is required)
-python main.py --step step1 --Ksoil_0 0.1 --region "Zimbabwe" --model "ACCESS-ESM1-5"
+### 2. Run Complete Analysis
+```python
+# Import the main analysis function
+from coin_bgc import run_main_analysis
 
-# Step 2: CO2 fertilization effects
-python main.py --step step2 --region "Zimbabwe" --model "ACCESS-ESM1-5"
+# Run complete analysis
+regions = ["Zimbabwe", "China"]
+models = ["ACCESS-ESM1-5"]
+Ksoil_0 = 0.1
+alpha = 0.5
 
-# Step 3: Climate sensitivity estimation
-python main.py --step step3 --region "Zimbabwe" --model "ACCESS-ESM1-5"
+results = run_main_analysis(regions, models, Ksoil_0, alpha)
 
-# Step 4: Validation
-python main.py --step step4 --region "Zimbabwe" --model "ACCESS-ESM1-5"
+# Access results
+for key, params in results.items():
+    print(f"Results for {key}:")
+    for param, value in params.items():
+        print(f"  {param}: {value:.6f}")
 ```
 
-### 3. Run Complete Analysis
-```bash
-# Run all steps sequentially (including PDF generation)
-python main.py --step all --Ksoil_0 0.1 --region "Zimbabwe" --model "ACCESS-ESM1-5"
+### 3. Run Individual Components
+```python
+# Load data
+from coin_bgc import load_data_for_analysis, load_co2_data
 
-# Run for multiple regions
-python main.py --step all --regions "Zimbabwe" "Zambia" --models "ACCESS-ESM1-5"
+piControl_data, full_data, bgc_data = load_data_for_analysis(["Zimbabwe"], ["ACCESS-ESM1-5"])
+co2_data = load_co2_data()
 
-# Recommended test command for code functionality (multiple regions with fixed alpha)
-python main.py --Ksoil_0 0.025 --alpha=-0.5 --regions "China" "Canada" "Brazil" "Zimbabwe" --model "ACCESS-ESM1-5"
+# Run preliminary optimizations
+from coin_bgc import run_preliminary_optimizations
+
+preliminary_params = run_preliminary_optimizations(
+    piControl_data, full_data, bgc_data, co2_data, Ksoil_0=0.1, alpha=0.5
+)
+
+# Run complete optimization
+from coin_bgc import run_complete_optimization
+
+final_params = run_complete_optimization(
+    piControl_data, full_data, bgc_data, co2_data, preliminary_params
+)
 ```
 
-### 4. Run with Fixed Parameters
-```bash
-# Fix specific parameters for any step (Ksoil_0 is required for Step 1)
-python main.py --step step1 --Ksoil_0 0.1 --region "Zimbabwe"
-python main.py --step step2 --Ktfp_co2 0.1 --region "Zimbabwe"
+### 4. Use the CoinBGC Class Directly
+```python
+from coin_bgc import CoinBGC
 
-# Set some climate sensitivity parameters to zero while optimizing others
-python main.py --step step3 --Ktfp_tas0 20.57 --Ktfp_pr0 3.26 --region "Zimbabwe"
-```
+# Initialize the system
+model = CoinBGC()
 
-### 5. Generate PDF Books
-```bash
-# Generate PDF books from existing results
-python main.py --create-pdf-books
+# Set parameter sets
+knowns = ['Ksoil_0', 'alpha']
+unknowns = ['Ktfp_0', 'Kresp_0', 'Cland_0']
+model.set_parameter_sets(knowns, unknowns)
+
+# Run model execution
+results = model.execute_model(data_df, known_values)
+
+# Run optimization
+optimal_params = model.optimize_parameters(known_values, data_df, initial_guesses, bounds)
 ```
 
 ## Input Data
 Place your input CSV files in `data/input/`. The project uses:
-- `Data_regression_piControl.csv` - Pre-industrial control data (Step 1)
-- `Data_regression_historical.csv` - Historical data (Steps 2-4)
-- `Data_regression_ssp585bgc.csv` - SSP585 biogeochemical scenario data (Steps 2, 4)
-- `Data_regression_ssp585.csv` - SSP585 scenario data (Step 3)
-- `historical-ssp585_co2.csv` - Historical and future CO2 concentrations (Steps 2-4)
+- `Data_regression_piControl.csv` - Pre-industrial control data
+- `Data_regression_historical.csv` - Historical data
+- `Data_regression_ssp585.csv` - SSP585 scenario data
+- `Data_regression_hist-bgc.csv` - Historical biogeochemical data
+- `Data_regression_ssp585-bgc.csv` - SSP585 biogeochemical scenario data
+- `historical-ssp585_co2.csv` - Historical and future CO2 concentrations
 
-## Output Files
-The model generates timestamped output files in `data/output/`:
-- `fitted_parameters_all_step1_YYYYMMDD_HHMMSS.csv` - Step 1 fitted parameters
-- `fitted_parameters_all_step2_YYYYMMDD_HHMMSS.csv` - Step 2 fitted parameters (including Ktfp_co2)
-- `fitted_parameters_all_step3_YYYYMMDD_HHMMSS.csv` - Step 3 fitted parameters (including climate sensitivities)
-- `fitted_parameters_all_step4_YYYYMMDD_HHMMSS.csv` - Step 4 validation results
-- `simulation_results_{region}_{model}_step{N}_YYYYMMDD_HHMMSS.csv` - Individual simulation results
+## Parameter Universe
 
-## PDF Books
-The system automatically generates three PDF books when running all steps:
-- **Book 1**: Step 1 results (GPP data vs. GPP model)
-- **Book 2**: Step 2 results (GPP data vs. GPP model)  
-- **Book 3**: Step 3 vs. Step 4 comparison (GPP data vs. GPP model for both steps)
+The complete parameter universe includes:
+
+- **Ksoil_0**: Inverse time constant for soil respiration
+- **Kresp_0**: Plant respiration fraction
+- **Ktfp_0**: Total factor productivity (base)
+- **alpha**: Production function exponent
+- **Cland_0**: Initial carbon land stock
+- **Ktfp_co2**: CO2 fertilization sensitivity
+- **Ktfp_co2_max**: CO2 fertilization maximum factor
+- **Ktfp_tas0**: Reference temperature
+- **Ktfp_tas1**: Linear temperature sensitivity coefficient
+- **Ktfp_tas2**: Quadratic temperature sensitivity coefficient
+- **Ktfp_pr0**: Reference precipitation
+- **Ktfp_pr1**: Linear precipitation sensitivity coefficient
+- **Ktfp_pr2**: Quadratic precipitation sensitivity coefficient
 
 ## Current Status
-- **Step 1**: ✅ **COMPLETED** - Pre-industrial parameter fitting with analytical optimization
-- **Step 2**: ✅ **COMPLETED** - CO2 fertilization effect estimation
-- **Step 3**: ✅ **COMPLETED** - Climate sensitivity parameter estimation with data-driven initial guesses
-- **Step 4**: ✅ **COMPLETED** - Validation step
-- **Code Refactoring**: ✅ **COMPLETED** - Modular architecture with clean parameter optimization approach
-- **Virtual Environment**: ✅ **COMPLETED** - Isolated Python environment with all dependencies
-- **PDF Visualization**: ✅ **COMPLETED** - Automatic PDF book generation
-- **Parameter Structure**: ✅ **COMPLETED** - Advanced climate sensitivity parameterization
-- **Parameter Inheritance**: ✅ **COMPLETED** - Proper parameter passing between steps
-- **Data-Driven Optimization**: ✅ **COMPLETED** - Using actual data values for initial guesses
+- **Clean Architecture**: ✅ **COMPLETED** - Modular design with three lists of keys
+- **Fail Fast Implementation**: ✅ **COMPLETED** - No error checking, immediate failure
+- **Multi-DataFrame Optimization**: ✅ **COMPLETED** - Can optimize across multiple datasets
+- **Main Processing Workflow**: ✅ **COMPLETED** - Complete analysis pipeline
+- **Data Loading Functions**: ✅ **COMPLETED** - Flexible data loading with optional filtering
+- **Enhanced Climate Sensitivity**: ✅ **COMPLETED** - Quadratic temperature and precipitation responses
+- **Preliminary Optimization Pipeline**: ✅ **COMPLETED** - Step-by-step optimization approach
+- **Complete Optimization Pipeline**: ✅ **COMPLETED** - Final optimization using all datasets
 
-## Next Steps: Combined Temperature and CO2 Sensitivity Analysis
+## Next Steps: Production Implementation
 
-The next major enhancement will be to use both the bgc and regular climate simulations together to find temperature and CO2 sensitivities simultaneously. This approach will:
+The next phase will focus on:
 
-1. **Combine datasets**: Use both SSP585bgc (CO2 changes, constant climate) and SSP585 (both CO2 and climate changes) data
-2. **Simultaneous optimization**: Optimize both temperature and CO2 sensitivity parameters together
-3. **Better parameter separation**: More robust separation of CO2 and climate effects
-4. **Enhanced validation**: Cross-validation between different simulation types
-
-This will provide a more comprehensive understanding of the relative importance of CO2 fertilization vs. climate change effects on terrestrial carbon cycling.
-
-## Command Line Options
-- `--step`: Specify step to run ("step1", "step2", "step3", "step4", "all")
-- `--region` / `--regions`: Specify single region or list of regions
-- `--model` / `--models`: Specify single model or list of models
-- `--Ksoil_0`, `--Kresp_0`, `--Ktfp_0`, `--alpha`: Fix specific parameters
-- `--Ktfp_co2`: Fix CO2 fertilization parameter
-- `--Ktfp_tas0`, `--Ktfp_tas1`, `--Ktfp_pr0`, `--Ktfp_pr1`: Set climate sensitivity parameters
-- `--create-pdf-books`: Generate PDF books from existing results
+1. **Production Testing**: Test the complete workflow with real data
+2. **Performance Optimization**: Optimize for large-scale runs
+3. **Visualization**: Add comprehensive plotting and reporting
+4. **Documentation**: Complete user documentation and examples
+5. **Validation**: Cross-validation with existing prototype results
 
 ## Dependencies
 - pandas==2.0.3 - Data manipulation and analysis
