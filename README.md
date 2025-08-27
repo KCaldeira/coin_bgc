@@ -135,7 +135,7 @@ Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
 Where:
 - `tas_factor = 1 + Ktfp_tas1 * (tas - Ktfp_tas0) + Ktfp_tas2 * (tas - Ktfp_tas0)^2`
 - `pr_factor = 1 + Ktfp_pr1 * (pr - Ktfp_pr0) + Ktfp_pr2 * (pr - Ktfp_pr0)^2`
-- `co2_factor = 1 + Ktfp_co2_max * (co2 - co2_0) / Ktfp_co2`
+- `co2_factor = 1 + Ktfp_co2_max * co2 / (co2 + Ktfp_co2)`
 
 ### Physical Interpretation
 This enhanced approach provides:
@@ -285,7 +285,7 @@ The complete parameter universe includes:
 - **Ktfp_0**: Total factor productivity (base)
 - **alpha**: Production function exponent
 - **Cland_0**: Initial carbon land stock
-- **Ktfp_co2**: CO2 fertilization sensitivity
+- **Ktfp_co2**: CO2 half-saturation value (ppm)
 - **Ktfp_co2_max**: CO2 fertilization maximum factor
 - **Ktfp_tas0**: Reference temperature
 - **Ktfp_tas1**: Linear temperature sensitivity coefficient

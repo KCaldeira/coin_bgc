@@ -224,7 +224,7 @@ class CoinBGC:
         pr_factor = 1.0 + params['Ktfp_pr1'] * (pr - params['Ktfp_pr0']) + params['Ktfp_pr2'] * (pr - params['Ktfp_pr0'])**2
         
         # CO2 factor
-        co2_factor = 1.0 + params['Ktfp_co2_max'] * (co2 - self.co2_0) / params['Ktfp_co2']
+        co2_factor = 1.0 + params['Ktfp_co2_max'] * co2 / (co2 + params['Ktfp_co2'])
         
         return ktfp_0 * tas_factor * pr_factor * co2_factor
     
