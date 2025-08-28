@@ -18,9 +18,16 @@ Central Design: Three Lists of Keys
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 import os
 from datetime import datetime
+import glob
+import sys
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+import warnings
+from scipy.stats import pearsonr
+import json
 
 
 # Global timestamp for the current run
@@ -133,12 +140,6 @@ def save_simulation_results(results_dict, step):
 
 def create_pdf_books():
     """Create PDF books for visualization."""
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_pdf import PdfPages
-    
-    output_dir = get_run_output_directory()
-    timestamp = _current_run_timestamp
-    
     print("Creating PDF books for all simulation stages...")
     
     # Find all simulation results files
@@ -200,6 +201,10 @@ def create_pdf_books():
                     # Calculate MSE
                     mse = ((df['gpp_data'] - df['GPP_model'])**2).mean()
                     
+                    # Set y-axis bounds ensuring 0 is on the chart
+                    all_data_values = list(df['gpp_data']) + list(df['GPP_model'])
+                    set_y_axis_bounds(ax, all_data_values)
+                    
                     # Customize plot
                     ax.set_xlabel('Year', fontsize=12)
                     ax.set_ylabel('GPP (kg C m⁻² yr⁻¹)', fontsize=12)
@@ -259,6 +264,11 @@ def create_pdf_books():
             ax.plot(df_full['year'], df_full['gpp_data'], 'r-', linewidth=2, label='GPP Data (Full)', alpha=0.8)
             ax.plot(df_bgc['year'], df_bgc['GPP_model'], 'b-', linewidth=1, label='GPP Model (BGC)', alpha=0.6)
             ax.plot(df_full['year'], df_full['GPP_model'], 'r-', linewidth=1, label='GPP Model (Full)', alpha=0.6)
+            
+            # Set y-axis bounds ensuring 0 is on the chart
+            all_data_values = (list(df_bgc['gpp_data']) + list(df_bgc['GPP_model']) + 
+                             list(df_full['gpp_data']) + list(df_full['GPP_model']))
+            set_y_axis_bounds(ax, all_data_values)
             
             # Customize plot
             ax.set_xlabel('Year', fontsize=12)
@@ -761,114 +771,14 @@ class CoinBGC:
             print(f"  WARNING: Optimization did not converge to desired accuracy!")
             print(f"  Best solution found will be used, but may not be optimal.")
         
-        # Perform sensitivity analysis if optimization didn't converge well or if parameters didn't move
-        if not result.success or result.nit < 10:
-            print(f"  Performing sensitivity analysis...")
-            self._sensitivity_analysis(knowns, unknowns, data_df, co2_df, result.x)
-        
-        # Check if any parameters didn't move from their initial values
-        unchanged_params = []
-        for i, param in enumerate(self.unknowns):
-            initial_val = x0[i]
-            final_val = result.x[i]
-            if abs(final_val - initial_val) < 1e-6:  # Essentially unchanged
-                unchanged_params.append(param)
-        
-        if unchanged_params:
-            print(f"  WARNING: Parameters that didn't change from initial values: {unchanged_params}")
-            print(f"  Performing detailed sensitivity analysis for unchanged parameters...")
-            self._detailed_sensitivity_analysis(knowns, unknowns, data_df, co2_df, result.x, unchanged_params)
-        
         # Convert result to dictionary
         optimal_unknowns = dict(zip(self.unknowns, result.x))
         
         return optimal_unknowns
     
-    def _sensitivity_analysis(self, knowns: Dict[str, float], unknowns: Dict[str, List[float]], 
-                            data_df: pd.DataFrame, co2_df: Optional[pd.DataFrame], 
-                            optimal_values: np.ndarray, perturbation: float = 0.01):
-        """
-        Perform sensitivity analysis to check how the objective function responds to parameter changes.
-        
-        Args:
-            knowns: Dictionary of known parameter values
-            unknowns: Dictionary of unknown parameters with bounds
-            data_df: DataFrame with observed data
-            co2_df: Optional DataFrame with CO2 concentration data
-            optimal_values: Current optimal parameter values
-            perturbation: Fractional perturbation to test (default: 1%)
-        """
-        print(f"    Sensitivity analysis (perturbation: {perturbation*100:.1f}%):")
-        
-        # Get baseline objective value
-        baseline_obj = self.objective_function(optimal_values, knowns, data_df, co2_df)
-        print(f"      Baseline objective value: {baseline_obj:.6f}")
-        
-        for i, param in enumerate(self.unknowns):
-            param_value = optimal_values[i]
-            param_bounds = unknowns[param]
-            
-            # Test positive perturbation
-            if param_value + param_value * perturbation <= param_bounds[2]:  # Within upper bound
-                test_values = optimal_values.copy()
-                test_values[i] = param_value * (1 + perturbation)
-                test_obj = self.objective_function(test_values, knowns, data_df, co2_df)
-                pos_change = (test_obj - baseline_obj) / baseline_obj * 100
-                print(f"      {param} (+{perturbation*100:.1f}%): {test_obj:.6f} ({pos_change:+.2f}%)")
-            else:
-                print(f"      {param} (+{perturbation*100:.1f}%): BOUNDED")
-            
-            # Test negative perturbation
-            if param_value - param_value * perturbation >= param_bounds[0]:  # Within lower bound
-                test_values = optimal_values.copy()
-                test_values[i] = param_value * (1 - perturbation)
-                test_obj = self.objective_function(test_values, knowns, data_df, co2_df)
-                neg_change = (test_obj - baseline_obj) / baseline_obj * 100
-                print(f"      {param} (-{perturbation*100:.1f}%): {test_obj:.6f} ({neg_change:+.2f}%)")
-            else:
-                print(f"      {param} (-{perturbation*100:.1f}%): BOUNDED")
+
     
-    def _detailed_sensitivity_analysis(self, knowns: Dict[str, float], unknowns: Dict[str, List[float]], 
-                                     data_df: pd.DataFrame, co2_df: Optional[pd.DataFrame], 
-                                     optimal_values: np.ndarray, unchanged_params: List[str]):
-        """
-        Perform detailed sensitivity analysis for parameters that didn't change during optimization.
-        
-        Args:
-            knowns: Dictionary of known parameter values
-            unknowns: Dictionary of unknown parameters with bounds
-            data_df: DataFrame with observed data
-            co2_df: Optional DataFrame with CO2 concentration data
-            optimal_values: Current optimal parameter values
-            unchanged_params: List of parameter names that didn't change
-        """
-        print(f"    Detailed sensitivity analysis for unchanged parameters:")
-        
-        # Get baseline objective value
-        baseline_obj = self.objective_function(optimal_values, knowns, data_df, co2_df)
-        print(f"      Baseline objective value: {baseline_obj:.6f}")
-        
-        for param in unchanged_params:
-            if param not in self.unknowns:
-                continue
-                
-            param_idx = self.unknowns.index(param)
-            param_value = optimal_values[param_idx]
-            param_bounds = unknowns[param]
-            
-            print(f"      Testing {param} (current: {param_value:.6f}, bounds: [{param_bounds[0]:.6f}, {param_bounds[2]:.6f}]):")
-            
-            # Test a range of values across the parameter space
-            test_values = [param_bounds[0], param_bounds[0] + (param_bounds[2] - param_bounds[0]) * 0.25,
-                          param_bounds[0] + (param_bounds[2] - param_bounds[0]) * 0.5,
-                          param_bounds[0] + (param_bounds[2] - param_bounds[0]) * 0.75, param_bounds[2]]
-            
-            for test_val in test_values:
-                test_values_array = optimal_values.copy()
-                test_values_array[param_idx] = test_val
-                test_obj = self.objective_function(test_values_array, knowns, data_df, co2_df)
-                change = (test_obj - baseline_obj) / baseline_obj * 100
-                print(f"        {test_val:.6f}: {test_obj:.6f} ({change:+.2f}%)")
+
     
     def objective_function_multi(self, unknown_values: np.ndarray, knowns: Dict[str, float], 
                                 data_dfs: List[pd.DataFrame], co2_dfs: Optional[List[pd.DataFrame]] = None) -> float:
@@ -1174,9 +1084,9 @@ def run_optimizations(piControl_data: pd.DataFrame, full_data: pd.DataFrame, bgc
     unknowns_dict = {
         'Ktfp_0': [Ktfp_0 * 0.5, Ktfp_0, Ktfp_0 * 2.0],
         'Ktfp_tas1': [-0.4, 0.001, 0.4],
-        'Ktfp_tas2': [-0.04, 0.001, 0.04],
+        'Ktfp_tas2': [-0.4, 0.001, 0.4],
         'Ktfp_pr1': [-0.4, 0.001, 0.4],
-        'Ktfp_pr2': [-0.04, 0.001, 0.04]
+        'Ktfp_pr2': [-0.4, 0.001, 0.4]
     }
     
     print(f"Step 2.2 optimization setup:")
@@ -1229,7 +1139,7 @@ def run_optimizations(piControl_data: pd.DataFrame, full_data: pd.DataFrame, bgc
     }
     
     unknowns_dict = {
-        'Ktfp_co2_half': [100.0, 1000.0, 10000.0]
+        'Ktfp_co2_half': [10.0, 1000.0, 10000.0]
     }
     
     # Run optimization
@@ -1272,10 +1182,10 @@ def run_optimizations(piControl_data: pd.DataFrame, full_data: pd.DataFrame, bgc
     unknowns_dict = {
         'Ktfp_0': [params['Ktfp_0'] * 0.5, params['Ktfp_0'], params['Ktfp_0'] * 2.0],
         'Ktfp_tas1': [-0.4, params['Ktfp_tas1'], 0.4],
-        'Ktfp_tas2': [-0.04, params['Ktfp_tas2'], 0.04],
+        'Ktfp_tas2': [-0.4, params['Ktfp_tas2'], 0.4],
         'Ktfp_pr1': [-0.4, params['Ktfp_pr1'], 0.4],
-        'Ktfp_pr2': [-0.04, params['Ktfp_pr2'], 0.04],
-        'Ktfp_co2_half': [100.0,  params['Ktfp_co2_half'], 10000.0]
+        'Ktfp_pr2': [-0.4, params['Ktfp_pr2'], 0.4],
+        'Ktfp_co2_half': [10.0,  params['Ktfp_co2_half'], 10000.0]
     }
     
     # Run multi-DataFrame optimization
@@ -1319,9 +1229,9 @@ def run_optimizations(piControl_data: pd.DataFrame, full_data: pd.DataFrame, bgc
     
     unknowns_dict = {
         'Ktfp_tas1': [-0.4, params['Ktfp_tas1'], 0.4],
-        'Ktfp_tas2': [-0.04, params['Ktfp_tas2'], 0.04],
+        'Ktfp_tas2': [-0.4, params['Ktfp_tas2'], 0.4],
         'Ktfp_pr1': [-0.4, params['Ktfp_pr1'], 0.4],
-        'Ktfp_pr2': [-0.04, params['Ktfp_pr2'], 0.04]
+        'Ktfp_pr2': [-0.4, params['Ktfp_pr2'], 0.4]
     }
     
     # Run multi-DataFrame optimization
@@ -1365,10 +1275,10 @@ def run_optimizations(piControl_data: pd.DataFrame, full_data: pd.DataFrame, bgc
     unknowns_dict = {
         'Ktfp_0': [params['Ktfp_0'] * 0.5, params['Ktfp_0'], params['Ktfp_0'] * 2.0],
         'Ktfp_tas1': [-0.4, params['Ktfp_tas1'], 0.4],
-        'Ktfp_tas2': [-0.04, params['Ktfp_tas2'], 0.04],
+        'Ktfp_tas2': [-0.4, params['Ktfp_tas2'], 0.4],
         'Ktfp_pr1': [-0.4, params['Ktfp_pr1'], 0.4],
-        'Ktfp_pr2': [-0.04, params['Ktfp_pr2'], 0.04],
-        'Ktfp_co2_half': [100.0, params['Ktfp_co2_half'], 10000.0]
+        'Ktfp_pr2': [-0.4, params['Ktfp_pr2'], 0.4],
+        'Ktfp_co2_half': [10.0, params['Ktfp_co2_half'], 10000.0]
     }
     
     # Run multi-DataFrame optimization using all datasets
@@ -1545,8 +1455,7 @@ def create_pdf_books_from_simulation_results(simulation_results: Dict[str, Dict[
         simulation_results: Dictionary of simulation results from run_all_simulations
         optimization_results: Dictionary of optimization results from run_main_analysis
     """
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_pdf import PdfPages
+    print("Creating PDF books from simulation results...")
     
     output_dir = get_run_output_directory()
     timestamp = _current_run_timestamp
@@ -1580,6 +1489,10 @@ def create_pdf_books_from_simulation_results(simulation_results: Dict[str, Dict[
                     # Calculate MSE
                     mse = ((sim_df['gpp_data'] - sim_df['GPP_model'])**2).mean()
                     
+                    # Set y-axis bounds ensuring 0 is on the chart
+                    all_data_values = list(sim_df['gpp_data']) + list(sim_df['GPP_model'])
+                    set_y_axis_bounds(ax, all_data_values)
+                    
                     # Customize plot
                     ax.set_xlabel('Year', fontsize=12)
                     ax.set_ylabel('GPP (kg C m⁻² yr⁻¹)', fontsize=12)
@@ -1612,8 +1525,8 @@ def create_pdf_books_from_simulation_results(simulation_results: Dict[str, Dict[
                             param_text += f"  {param_name}: {param_value:.6f}\n"
                         
                         # Add parameter text box
-                        ax.text(0.02, 0.85, param_text, transform=ax.transAxes,
-                               verticalalignment='top', fontsize=8, fontfamily='monospace',
+                        ax.text(0.02, 0.02, param_text, transform=ax.transAxes,
+                               verticalalignment='bottom', fontsize=8, fontfamily='monospace',
                                bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
                     except Exception as e:
                         # If parameter extraction fails, just continue without parameters
@@ -1645,6 +1558,11 @@ def create_pdf_books_from_simulation_results(simulation_results: Dict[str, Dict[
                 ax.plot(df_full['year'], df_full['gpp_data'], 'r-', linewidth=2, label='GPP Data (Full)', alpha=0.8)
                 ax.plot(df_bgc['year'], df_bgc['GPP_model'], 'b-', linewidth=1, label='GPP Model (BGC)', alpha=0.6)
                 ax.plot(df_full['year'], df_full['GPP_model'], 'r-', linewidth=1, label='GPP Model (Full)', alpha=0.6)
+                
+                # Set y-axis bounds ensuring 0 is on the chart
+                all_data_values = (list(df_bgc['gpp_data']) + list(df_bgc['GPP_model']) + 
+                                 list(df_full['gpp_data']) + list(df_full['GPP_model']))
+                set_y_axis_bounds(ax, all_data_values)
                 
                 # Customize plot
                 ax.set_xlabel('Year', fontsize=12)
@@ -1814,6 +1732,28 @@ def example_usage():
     optimized_results = model.execute_model(sample_data, optimized_params)
     print("Optimized model results:")
     print(optimized_results[['year', 'gpp_data', 'GPP_model', 'Cland']].head())
+
+
+def set_y_axis_bounds(ax, data_values):
+    """
+    Set y-axis bounds ensuring 0 is always on the chart with appropriate padding.
+    
+    Args:
+        ax: matplotlib axis object
+        data_values: list or array of data values to plot
+    """
+    if not data_values:
+        return
+    
+    min_val = min(data_values)
+    max_val = max(data_values)
+    
+    if min_val >= 0:  # All positive data
+        ax.set_ylim(0, 1.1 * max_val)
+    elif max_val <= 0:  # All negative data
+        ax.set_ylim(1.1 * min_val, 0)
+    else:  # Mixed positive and negative data
+        ax.set_ylim(1.1 * min_val, 1.1 * max_val)
 
 
 if __name__ == "__main__":

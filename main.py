@@ -8,6 +8,8 @@ It provides a command-line interface to run the complete analysis workflow.
 
 import argparse
 import sys
+import pandas as pd
+import traceback
 from typing import List
 
 from coin_bgc import run_main_analysis, load_data_for_analysis, load_co2_data, get_run_output_directory
@@ -56,13 +58,13 @@ Examples:
         '--regions', 
         nargs='+', 
         type=str,
-        help='List of regions to analyze (e.g., "Zimbabwe" "China" "Brazil")'
+        help='List of regions to analyze (e.g., "Zimbabwe" "China" "Brazil"). If not specified, all available regions will be used.'
     )
     parser.add_argument(
         '--models', 
         nargs='+', 
         type=str,
-        help='List of climate models to analyze (e.g., "ACCESS-ESM1-5" "CanESM5")'
+        help='List of climate models to analyze (e.g., "ACCESS-ESM1-5" "CanESM5"). If not specified, all available models will be used.'
     )
     
     # Data exploration
@@ -133,6 +135,22 @@ def list_available_data():
         sys.exit(1)
 
 
+def get_all_available_regions_and_models():
+    """Get all available regions and models from the data files."""
+    try:
+        # Load all data without filtering to see what's available
+        piControl_data, full_data, bgc_data = load_data_for_analysis()
+        
+        regions = sorted(piControl_data['region'].unique())
+        models = sorted(piControl_data['model'].unique())
+        
+        return regions, models
+    except Exception as e:
+        print(f"Error loading data to get available regions/models: {e}")
+        print("Make sure the data files are in the data/input/ directory.")
+        sys.exit(1)
+
+
 def validate_parameters(args):
     """Validate command line parameters."""
     if args.Ksoil_0 <= 0:
@@ -143,18 +161,11 @@ def validate_parameters(args):
         print("ERROR: alpha must be between 0 and 1")
         sys.exit(1)
     
-    if not args.regions and not args.list_data:
-        print("ERROR: Must specify --regions or use --list-data")
-        sys.exit(1)
-    
-    if not args.models and not args.list_data:
-        print("ERROR: Must specify --models or use --list-data")
-        sys.exit(1)
+    # Note: regions and models are now optional - if not specified, all available will be used
 
 
 def save_results(results, output_file):
     """Save results to CSV file."""
-    import pandas as pd
     
     # Convert results dictionary to DataFrame
     rows = []
@@ -180,10 +191,22 @@ def main():
     # Validate parameters
     validate_parameters(args)
     
+    # Get regions and models (use all available if not specified)
+    regions = args.regions
+    models = args.models
+    
+    if not regions:
+        print("No regions specified, using all available regions...")
+        regions, _ = get_all_available_regions_and_models()
+    
+    if not models:
+        print("No models specified, using all available models...")
+        _, models = get_all_available_regions_and_models()
+    
     # Print run information
     print("=== COIN-BGC Clean Implementation ===")
-    print(f"Regions: {args.regions}")
-    print(f"Models: {args.models}")
+    print(f"Regions: {regions}")
+    print(f"Models: {models}")
     print(f"Ksoil_0: {args.Ksoil_0}")
     print(f"alpha: {args.alpha}")
     if args.output_file:
@@ -192,7 +215,7 @@ def main():
     
     try:
         # Run the main analysis
-        results = run_main_analysis(args.regions, args.models, args.Ksoil_0, args.alpha, args.max_iterations)
+        results = run_main_analysis(regions, models, args.Ksoil_0, args.alpha, args.max_iterations)
         
         # Print results summary
         print(f"\n=== Analysis Complete ===")
@@ -223,7 +246,6 @@ def main():
     except Exception as e:
         print(f"ERROR: Analysis failed: {e}")
         if args.verbose:
-            import traceback
             traceback.print_exc()
         sys.exit(1)
 
