@@ -11,7 +11,7 @@ This implementation provides a clean, modular architecture for parameter optimiz
 ### Core Components
 
 1. **`CoinBGC` Class**: The main model implementation with optimization capabilities
-2. **`run_optimizations()`**: Unified function that runs all optimization steps (2.1 through 2.7)
+2. **`run_optimizations()`**: Unified function that runs all optimization steps (2.1 through 2.6)
 3. **`run_all_simulations()`**: Runs forward simulations using optimized parameters
 4. **`run_main_analysis()`**: Orchestrates the complete analysis workflow
 
@@ -19,13 +19,12 @@ This implementation provides a clean, modular architecture for parameter optimiz
 
 The system uses a unified optimization approach with the following steps:
 
-- **Step 2.1**: Calculate initial parameters from global piControl data means
-- **Step 2.2**: Set reference values to historical means  
-- **Step 2.3**: Optimize climate sensitivity parameters using historical data
-- **Step 2.4**: Optimize CO2 parameters using bgc_data
-- **Step 2.5**: Optimize all parameters using bgc_data and piControl_data
-- **Step 2.6**: Final optimization of climate sensitivity parameters using all data
-- **Step 2.7**: Complete optimization using all datasets (formerly Step 3)
+- **Step 2.1**: Calculate initial parameters from piControl data
+- **Step 2.2**: Optimize climate sensitivity parameters using historical data
+- **Step 2.3**: Optimize CO2 parameters using bgc_data
+- **Step 2.4**: Optimize all parameters using bgc_data and piControl_data
+- **Step 2.5**: Final optimization of climate sensitivity parameters using all data
+- **Step 2.6**: Complete optimization using all datasets
 
 ### Parameter Dictionary Structure
 
@@ -40,6 +39,13 @@ all_parameter_results = {
 ```
 
 This ensures each simulation uses exactly the correct parameters for its specific region/model/step combination.
+
+### Parameter Management
+
+The system uses explicit parameter dictionaries for clarity:
+
+- **`knowns_dict`**: Dictionary of fixed parameters with their values
+- **`unknowns_dict`**: Dictionary of optimized parameters with format `[lower_bound, initial_guess, upper_bound]`
 
 ## Usage
 
@@ -92,7 +98,24 @@ The complete parameter universe includes:
 - `Ktfp_0`: Total factor productivity baseline
 - `Ktfp_tas0`, `Ktfp_tas1`, `Ktfp_tas2`: Temperature sensitivity parameters
 - `Ktfp_pr0`, `Ktfp_pr1`, `Ktfp_pr2`: Precipitation sensitivity parameters
-- `Ktfp_co2`, `Ktfp_co2_max`: CO2 sensitivity parameters
+- `Ktfp_co2_half`: CO2 half-saturation concentration
+
+### Parameter Constraints
+
+- `Ktfp_co2_max` is calculated from the constraint that `co2_factor = 1` when `co2 = co2_0`:
+  ```
+  Ktfp_co2_max = (co2_0 + Ktfp_co2_half) / co2_0
+  ```
+
+## Current Status
+
+The system is **functionally complete** and producing results, but may need minor parameter tuning for optimal performance. Recent improvements include:
+
+- **Enhanced debugging output**: Detailed optimization progress and parameter sensitivity analysis
+- **Improved parameter bounds**: Expanded ranges for climate sensitivity parameters
+- **Physical constraint implementation**: `Ktfp_co2_max` calculated from physical principles
+- **Consistent parameter format**: Standardized `[lower_bound, initial_guess, upper_bound]` format
+- **Element-wise maximum**: Ensures `Ktfp` never goes negative using `np.maximum`
 
 ## Clean Implementation Features
 

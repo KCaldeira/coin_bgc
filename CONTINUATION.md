@@ -3,7 +3,7 @@
 ## Overall Goal
 The overall goal is to simulate land-surface behavior under climate change using a Solow-Swan growth model. The system is under-determined by one parameter, so **Ksoil_0** (inverse time constant for heterotrophic respiration) is chosen a priori.
 
-## Current State - UNIFIED OPTIMIZATION IMPLEMENTATION COMPLETE ✅
+## Current State - OPTIMIZATION REFINEMENT IN PROGRESS 🔄
 - **Clean Architecture COMPLETED**: Modular design with unified optimization approach
 - **Fail Fast Implementation COMPLETED**: No error checking, immediate failure on issues
 - **Multi-DataFrame Optimization COMPLETED**: Can optimize across multiple datasets
@@ -11,23 +11,59 @@ The overall goal is to simulate land-surface behavior under climate change using
 - **Output System COMPLETED**: Timestamped directories with stage-by-stage parameter saving
 - **PDF Book Generation COMPLETED**: Professional visualization of simulation results
 - **Runtime Errors ELIMINATED**: System runs without fatal errors
-- **Parameter Optimization REFINEMENT NEEDED**: Results are being optimized for accuracy
+- **Parameter Optimization REFINEMENT IN PROGRESS**: Enhanced debugging and parameter tuning
 - **Data Loading Functions COMPLETED**: Flexible data loading with optional filtering
 - **Quadratic Climate Sensitivity COMPLETED**: Enhanced parameterization with quadratic terms
 - **Unified Optimization COMPLETED**: All optimization steps integrated into single function
+- **Physical Constraints IMPLEMENTED**: Ktfp_co2_max calculated from physical principles
+- **Enhanced Debugging COMPLETED**: Detailed optimization progress and sensitivity analysis
+
+## Recent Improvements (Latest Updates)
+
+### Enhanced Optimization Debugging ✅
+- **Detailed progress reporting**: Gradient norms, parameter changes, convergence status
+- **Sensitivity analysis**: Automatic analysis for parameters that don't change from initial values
+- **Parameter change tracking**: Clear reporting of initial → final parameter values
+- **Optimization precision**: Enhanced `gtol`, `ftol`, and `eps` settings for better convergence
+
+### Parameter Management Refinements ✅
+- **Consistent format**: Standardized `[lower_bound, initial_guess, upper_bound]` format throughout
+- **Physical constraints**: `Ktfp_co2_max` calculated from `co2_factor = 1` when `co2 = co2_0`
+- **Expanded parameter ranges**: Climate sensitivity parameters expanded by factor of 4
+- **Element-wise maximum**: `np.maximum` ensures `Ktfp` never goes negative
+- **Improved initial guesses**: Changed from 0.0 to 0.001 for better tracking
+
+### Parameter Dictionary Structure ✅
+The system uses explicit parameter dictionaries for clarity:
+
+```python
+knowns_dict = {
+    'Ksoil_0': Ksoil_0,
+    'alpha': alpha,
+    'Kresp_0': params['Kresp_0'],
+    # ... other fixed parameters
+}
+
+unknowns_dict = {
+    'Ktfp_tas1': [-0.4, 0.001, 0.4],  # [lower, initial_guess, upper]
+    'Ktfp_tas2': [-0.4, 0.001, 0.4],
+    'Ktfp_pr1': [-0.4, 0.001, 0.4],
+    'Ktfp_pr2': [-0.04, 0.001, 0.04],
+    'Ktfp_co2_half': [100.0, params['Ktfp_co2_half'], 10000.0]
+}
+```
 
 ## Unified Optimization Implementation ✅
 
 ### Integrated Optimization Function
 The system now uses a single `run_optimizations()` function that handles all optimization steps:
 
-1. **Step 2.1**: Initial parameter calculation from global piControl data
-2. **Step 2.2**: Reference values set to historical means
-3. **Step 2.3**: Climate sensitivity optimization using historical data
-4. **Step 2.4**: CO2 parameter optimization using bgc_data
-5. **Step 2.5**: All parameter optimization using bgc_data and piControl_data
-6. **Step 2.6**: Final climate sensitivity optimization using all data
-7. **Step 2.7**: Complete optimization using all datasets (formerly Step 3)
+1. **Step 2.1**: Initial parameter calculation from piControl data
+2. **Step 2.2**: Climate sensitivity optimization using historical data
+3. **Step 2.3**: CO2 parameter optimization using bgc_data
+4. **Step 2.4**: All parameter optimization using bgc_data and piControl_data
+5. **Step 2.5**: Final climate sensitivity optimization using all data
+6. **Step 2.6**: Complete optimization using all datasets
 
 ### Parameter Dictionary Structure
 The system uses a clean parameter dictionary with `(region, model, step)` tuples as keys:
@@ -45,12 +81,11 @@ This ensures each simulation uses exactly the correct parameters for its specifi
 ### Stage-by-Stage Parameter Saving
 The system saves fitted parameters at each optimization stage:
 1. **Step 2.1**: Initial parameter calculation from historical data
-2. **Step 2.2**: Reference values set to historical means
-3. **Step 2.3**: Climate sensitivity optimization using historical data
-4. **Step 2.4**: CO2 parameter optimization using bgc_data
-5. **Step 2.5**: All parameter optimization using bgc_data and piControl_data
-6. **Step 2.6**: Final climate sensitivity optimization using all data
-7. **Step 2.7**: Complete optimization using all datasets
+2. **Step 2.2**: Climate sensitivity optimization using historical data
+3. **Step 2.3**: CO2 parameter optimization using bgc_data
+4. **Step 2.4**: All parameter optimization using bgc_data and piControl_data
+5. **Step 2.5**: Final climate sensitivity optimization using all data
+6. **Step 2.6**: Complete optimization using all datasets
 
 ### Simulation Results
 - **CSV files**: Model outputs for each dataset (piControl, full, bgc) and each optimization step
@@ -67,12 +102,11 @@ The system saves fitted parameters at each optimization stage:
 ### Stage-by-Stage Parameter Saving
 The system saves fitted parameters at each optimization stage:
 1. **Step 2.1**: Initial parameter calculation from historical data
-2. **Step 2.2**: Reference values set to historical means
-3. **Step 2.3**: Climate sensitivity optimization using historical data
-4. **Step 2.4**: CO2 parameter optimization using bgc_data
-5. **Step 2.5**: All parameter optimization using bgc_data and piControl_data
-6. **Step 2.6**: Final climate sensitivity optimization using all data
-7. **Step 2.7**: Complete optimization using all datasets
+2. **Step 2.2**: Climate sensitivity optimization using historical data
+3. **Step 2.3**: CO2 parameter optimization using bgc_data
+4. **Step 2.4**: All parameter optimization using bgc_data and piControl_data
+5. **Step 2.5**: Final climate sensitivity optimization using all data
+6. **Step 2.6**: Complete optimization using all datasets
 
 ### Simulation Results
 - **CSV files**: Model outputs for each dataset (piControl, full, bgc) and each optimization step
@@ -98,13 +132,14 @@ Ktfp = Ktfp_0 * tas_factor * pr_factor * co2_factor
 Where:
 - `tas_factor = 1 + Ktfp_tas1 * (tas - Ktfp_tas0) + Ktfp_tas2 * (tas - Ktfp_tas0)^2`
 - `pr_factor = 1 + Ktfp_pr1 * (pr - Ktfp_pr0) + Ktfp_pr2 * (pr - Ktfp_pr0)^2`
-- `co2_factor = 1 + Ktfp_co2_max * co2 / (co2 + Ktfp_co2)`
+- `co2_factor = 1 + Ktfp_co2_max * co2 / (co2 + Ktfp_co2_half)`
+- `Ktfp_co2_max = (co2_0 + Ktfp_co2_half) / co2_0` (calculated from physical constraint)
 
 ## Code Architecture ✅
 
 ### Core Components
 - **`CoinBGC` class**: Main class implementing the clean architecture
-- **`run_optimizations()`**: Unified function that runs all optimization steps (2.1 through 2.7)
+- **`run_optimizations()`**: Unified function that runs all optimization steps (2.1 through 2.6)
 - **`run_all_simulations()`**: Runs forward simulations using optimized parameters
 - **`run_main_analysis()`**: Orchestrates the complete analysis workflow
 
@@ -116,13 +151,12 @@ def run_optimizations(piControl_data, full_data, bgc_data, co2_data, Ksoil_0, al
     """
     Run all optimizations for a region/model combination.
     """
-    # Step 2.1: Calculate initial parameters from global piControl data
-    # Step 2.2: Set reference values to historical means
-    # Step 2.3: Optimize climate sensitivity parameters using historical data
-    # Step 2.4: Optimize CO2 parameters using bgc_data
-    # Step 2.5: Optimize all parameters using bgc_data and piControl_data
-    # Step 2.6: Final optimization of climate sensitivity parameters using all data
-    # Step 2.7: Complete optimization using all datasets
+    # Step 2.1: Calculate initial parameters from piControl data
+    # Step 2.2: Optimize climate sensitivity parameters using historical data
+    # Step 2.3: Optimize CO2 parameters using bgc_data
+    # Step 2.4: Optimize all parameters using bgc_data and piControl_data
+    # Step 2.5: Final optimization of climate sensitivity parameters using all data
+    # Step 2.6: Complete optimization using all datasets
 ```
 
 This approach makes parameter management much clearer and more maintainable.
@@ -139,16 +173,34 @@ This approach makes parameter management much clearer and more maintainable.
 - **CO2 integration**: Historical and future CO2 concentration data support
 - **Comprehensive output**: Clean output format for further processing
 - **Extensible**: Easy to modify by moving parameters between knowns and unknowns
+- **Enhanced debugging**: Detailed optimization progress and sensitivity analysis
+- **Physical constraints**: Ktfp_co2_max calculated from physical principles
+- **Robust optimization**: Element-wise maximum prevents negative Ktfp values
 
-## Next Steps: Production Implementation
+## Current Status: Optimization Refinement 🔄
+
+The system is **functionally complete** and producing results, but ongoing refinement is focused on:
+
+1. **Parameter Optimization Effectiveness**: Some parameters (e.g., `Ktfp_pr2`) may not be optimizing effectively
+2. **Convergence Analysis**: Detailed debugging output helps identify optimization issues
+3. **Parameter Sensitivity**: Understanding which parameters have the most impact on model performance
+4. **Physical Realism**: Ensuring optimized parameters produce physically reasonable results
+
+### Recent Debugging Enhancements
+- **Gradient norm reporting**: Shows optimization convergence quality
+- **Parameter change tracking**: Clear visibility of optimization progress
+- **Sensitivity analysis**: Automatic analysis for parameters that don't change
+- **Enhanced precision**: Tighter tolerance settings for better convergence
+
+## Next Steps: Production Optimization
 
 The next phase will focus on:
 
-1. **Production Testing**: Test the complete workflow with real data
-2. **Performance Optimization**: Optimize for large-scale runs
-3. **Visualization**: Add comprehensive plotting and reporting
-4. **Documentation**: Complete user documentation and examples
-5. **Validation**: Cross-validation with existing prototype results
+1. **Parameter Tuning**: Fine-tune parameter bounds and initial guesses based on debugging output
+2. **Convergence Analysis**: Analyze optimization patterns across different regions/models
+3. **Physical Validation**: Ensure optimized parameters produce realistic results
+4. **Performance Optimization**: Optimize for large-scale runs
+5. **Documentation**: Complete user documentation and examples
 
 ## Dependencies
 - pandas==2.0.3 - Data manipulation and analysis

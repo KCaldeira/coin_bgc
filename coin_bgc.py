@@ -62,7 +62,7 @@ def save_fitted_parameters(all_fitted_params, step, region=None, model=None):
     standard_columns = [
         'step', 'model', 'region', 'optimization_success',
         'final_mse',
-        'Ksoil_0', 'Kresp_0', 'Ktfp_0', 'alpha', 'Cland_0', 'Ktfp_co2', 'Ktfp_co2_max',
+        'Ksoil_0', 'Kresp_0', 'Ktfp_0', 'alpha', 'Cland_0', 'Ktfp_co2_half',
         'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2'
     ]
     
@@ -391,8 +391,7 @@ class CoinBGC:
             'Ktfp_0',       # Total factor productivity (base)
             'alpha',        # Production function exponent
             'Cland_0',      # Initial carbon land stock
-            'Ktfp_co2',     # CO2 fertilization sensitivity
-            'Ktfp_co2_max', # CO2 fertilization maximum factor
+            'Ktfp_co2_half',     # CO2 fertilization sensitivity
             'Ktfp_tas0',    # Reference temperature
             'Ktfp_tas1',    # Temperature sensitivity coefficient (linear)
             'Ktfp_tas2',    # Temperature sensitivity coefficient (quadratic)
@@ -477,29 +476,30 @@ class CoinBGC:
         pr_factor = 1.0 + params['Ktfp_pr1'] * (pr - params['Ktfp_pr0']) + params['Ktfp_pr2'] * (pr - params['Ktfp_pr0'])**2
         
         # CO2 factor
-        co2_factor = 1.0 + params['Ktfp_co2_max'] * co2 / (co2 + params['Ktfp_co2'])
+        # Calculate Ktfp_co2_max such that co2_factor = 1 when co2 = co2_0
+        # Ktfp_co2_max = (co2_0 + Ktfp_co2_half) / co2_0
+        Ktfp_co2_max = (self.co2_0 + params['Ktfp_co2_half']) / self.co2_0
+        co2_factor = 1.0 + Ktfp_co2_max * co2 / (co2 + params['Ktfp_co2_half'])
         
-        return ktfp_0 * tas_factor * pr_factor * co2_factor
+        return np.maximum(0.0, ktfp_0 * tas_factor * pr_factor * co2_factor)
     
-    def execute_model(self, data_df: pd.DataFrame, known_values: Dict[str, float], 
+    def execute_model(self, data_df: pd.DataFrame, params: Dict[str, float], 
                      co2_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Basic Model Execution Routine: Execute the model from start year to end year.
         
-        This is the first core routine that takes a pandas DataFrame and a dictionary
-        of parameter values for the set of knowns. All variables not in knowns
-        (i.e., universe - knowns) are set to 0.0.
+        This is the first core routine that takes a pandas DataFrame and a complete
+        parameter dictionary.
         
         Args:
             data_df: DataFrame with columns ['year', 'tas', 'pr', 'npp', 'gpp']
-            known_values: Dictionary of known parameter values
+            params: Complete parameter dictionary with all parameters
             co2_df: Optional DataFrame with CO2 concentration data
             
         Returns:
             DataFrame with model results including calculated GPP, NPP, Cland, etc.
         """
-        # Create complete parameter dictionary (unknowns set to 0.0)
-        params = self.create_parameter_dict(known_values)
+        # Use the provided complete parameter dictionary
         
         # Sort data by year
         data_df = data_df.sort_values('year').reset_index(drop=True)
@@ -564,8 +564,7 @@ class CoinBGC:
                 'Ktfp_0': params['Ktfp_0'],
                 'alpha': params['alpha'],
                 'Cland_0': params['Cland_0'],
-                'Ktfp_co2': params['Ktfp_co2'],
-                'Ktfp_co2_max': params['Ktfp_co2_max'],
+                'Ktfp_co2_half': params['Ktfp_co2_half'],
                 'Ktfp_tas0': params['Ktfp_tas0'],
                 'Ktfp_tas1': params['Ktfp_tas1'],
                 'Ktfp_tas2': params['Ktfp_tas2'],
@@ -581,41 +580,125 @@ class CoinBGC:
             
             # Update Cland for next year
             Cland = Cland + dCland_dt
+            
+            # Check if Cland has gone negative or zero - if so, stop simulation
+            if Cland <= 0:
+                print(f"Warning: Cland went to {Cland:.6f} at year {year}. Stopping simulation.")
+                print(f"Parameters that caused collapse:")
+                print(f"  Ksoil_0: {params['Ksoil_0']:.6f}")
+                print(f"  alpha: {params['alpha']:.6f}")
+                print(f"  Kresp_0: {params['Kresp_0']:.6f}")
+                print(f"  Cland_0: {params['Cland_0']:.6f}")
+                print(f"  Ktfp_0: {params['Ktfp_0']:.6f}")
+                print(f"  Ktfp_tas0: {params['Ktfp_tas0']:.6f}")
+                print(f"  Ktfp_tas1: {params['Ktfp_tas1']:.6f}")
+                print(f"  Ktfp_tas2: {params['Ktfp_tas2']:.6f}")
+                print(f"  Ktfp_pr0: {params['Ktfp_pr0']:.6f}")
+                print(f"  Ktfp_pr1: {params['Ktfp_pr1']:.6f}")
+                print(f"  Ktfp_pr2: {params['Ktfp_pr2']:.6f}")
+                print(f"  Ktfp_co2_half: {params['Ktfp_co2_half']:.6f}")
+                print(f"Current year values:")
+                print(f"  tas: {tas:.6f}")
+                print(f"  pr: {pr:.6f}")
+                print(f"  co2: {co2:.6f}")
+                print(f"  Ktfp: {Ktfp:.6f}")
+                print(f"  GPP: {GPP:.6f}")
+                print(f"  NPP: {NPP:.6f}")
+                print(f"  Sresp: {Sresp:.6f}")
+                print(f"  dCland_dt: {dCland_dt:.6f}")
+                print(f"  Previous Cland: {Cland - dCland_dt:.6f}")
+                # Fill remaining rows with zeros
+                for j in range(i + 1, len(data_df)):
+                    remaining_row = data_df.iloc[j]
+                    zero_row = {
+                        'year': remaining_row['year'],
+                        'Cland': 0.0,
+                        'GPP_model': 0.0,
+                        'NPP_model': 0.0,
+                        'SOILresp': 0.0,
+                        'dCland_dt': 0.0,
+                        'tas_data': remaining_row['tas'],
+                        'pr_data': remaining_row['pr'],
+                        'co2': self._get_co2_for_year(co2_df, remaining_row['year']) if co2_df is not None else self.co2_0,
+                        'gpp_data': remaining_row['gpp'],
+                        'npp_data': remaining_row['npp'],
+                        'region': remaining_row.get('region', 'unknown'),
+                        'model': remaining_row.get('model', 'unknown'),
+                        # Include complete parameter universe for transparency
+                        'Ksoil_0': params['Ksoil_0'],
+                        'Kresp_0': params['Kresp_0'],
+                        'Ktfp_0': params['Ktfp_0'],
+                        'alpha': params['alpha'],
+                        'Cland_0': params['Cland_0'],
+                        'Ktfp_co2_half': params['Ktfp_co2_half'],
+                        'Ktfp_tas0': params['Ktfp_tas0'],
+                        'Ktfp_tas1': params['Ktfp_tas1'],
+                        'Ktfp_tas2': params['Ktfp_tas2'],
+                        'Ktfp_pr0': params['Ktfp_pr0'],
+                        'Ktfp_pr1': params['Ktfp_pr1'],
+                        'Ktfp_pr2': params['Ktfp_pr2'],
+                        # Also include the calculated values for verification
+                        'Ksoil': Ksoil,
+                        'Kresp': Kresp,
+                        'Ktfp': 0.0
+                    }
+                    results.append(zero_row)
+                break
         
         return pd.DataFrame(results)
     
-    def objective_function(self, unknown_values: np.ndarray, known_values: Dict[str, float], 
+    def objective_function(self, unknown_values: np.ndarray, knowns: Dict[str, float], 
                           data_df: pd.DataFrame, co2_df: Optional[pd.DataFrame] = None) -> float:
         """
         Objective function for optimization: Mean squared error between observed and predicted GPP.
         
         Args:
             unknown_values: Array of unknown parameter values
-            known_values: Dictionary of known parameter values
+            knowns: Dictionary of known parameter values
             data_df: DataFrame with observed data
             co2_df: Optional DataFrame with CO2 concentration data
             
         Returns:
             Mean squared error
         """
+        # Track function evaluations for max_iterations enforcement
+        if not hasattr(self, '_function_eval_count'):
+            self._function_eval_count = 0
+        self._function_eval_count += 1
+        
+        # Check if we've exceeded max function evaluations
+        if hasattr(self, '_max_function_evals') and self._function_eval_count > self._max_function_evals:
+            print(f"  WARNING: Exceeded {self._max_function_evals} function evaluations. Returning high penalty.")
+            return 1e6  # Return very high value to force termination
+        
         # Convert unknown_values array to dictionary
         unknown_dict = dict(zip(self.unknowns, unknown_values))
         
         # Create complete parameter dictionary
-        params = self.create_parameter_dict(known_values, unknown_dict)
+        params = self.create_parameter_dict(knowns, unknown_dict)
         
-        # Run model
-        results = self.execute_model(data_df, known_values, co2_df)
+        # Run model with complete parameter dictionary
+        results = self.execute_model(data_df, params, co2_df)
         
         # Calculate MSE between observed and predicted GPP
         mse = np.mean((results['gpp_data'] - results['GPP_model']) ** 2)
         
+        # Debug: Print MSE for first few evaluations
+        if hasattr(self, '_debug_count'):
+            self._debug_count += 1
+        else:
+            self._debug_count = 0
+            
+        if self._debug_count < 3:  # Only print first 3 evaluations
+            print(f"  Objective function call {self._debug_count}: MSE = {mse:.6f}")
+            print(f"    GPP_data range: {results['gpp_data'].min():.3f} to {results['gpp_data'].max():.3f}")
+            print(f"    GPP_model range: {results['GPP_model'].min():.3f} to {results['GPP_model'].max():.3f}")
+        
         return mse
     
-    def optimize_parameters(self, known_values: Dict[str, float], data_df: pd.DataFrame,
-                          initial_guesses: Optional[Dict[str, float]] = None,
-                          bounds: Optional[List[Tuple[float, float]]] = None,
-                          co2_df: Optional[pd.DataFrame] = None) -> Dict[str, float]:
+    def optimize_parameters(self, knowns: Dict[str, float], unknowns: Dict[str, List[float]], 
+                          data_df: pd.DataFrame, co2_df: Optional[pd.DataFrame] = None, 
+                          max_iterations: int = 100000) -> Dict[str, float]:
         """
         Optimization Routine: Optimize for the unknowns given the knowns.
         
@@ -623,56 +706,199 @@ class CoinBGC:
         and a pandas DataFrame. Returns optimal values for the unknown parameters.
         
         Args:
-            known_values: Dictionary of known parameter values
+            knowns: Dictionary of known parameter values {param_name: value}
+            unknowns: Dictionary of unknown parameters with [lower_bound, initial_guess, upper_bound]
             data_df: DataFrame with observed data
-            initial_guesses: Dictionary of initial guesses for unknown parameters
-            bounds: List of (min, max) bounds for unknown parameters
             co2_df: Optional DataFrame with CO2 concentration data
+            max_iterations: Maximum number of iterations for optimization (default: 100000)
             
         Returns:
             Dictionary of optimal values for unknown parameters
         """
+        # Set parameter sets for this optimization
+        self.set_parameter_sets(list(knowns.keys()), list(unknowns.keys()))
+        
+        # Reset function evaluation counter and set max
+        self._function_eval_count = 0
+        self._max_function_evals = max_iterations * 10  # Allow 10x more function evaluations than iterations
+        
         # Create initial guess array
-        x0 = np.array([initial_guesses[param] for param in self.unknowns])
+        x0 = np.array([unknowns[param][1] for param in self.unknowns])
         
         # Create bounds array
-        bounds_array = [bounds[i] for i, param in enumerate(self.unknowns)]
+        bounds_array = [(unknowns[param][0], unknowns[param][2]) for param in self.unknowns]
         
         # Run optimization
         result = minimize(
             fun=self.objective_function,
             x0=x0,
-            args=(known_values, data_df, co2_df),
+            args=(knowns, data_df, co2_df),
             bounds=bounds_array,
-            method='L-BFGS-B'
+            method='L-BFGS-B',
+            options={
+                'maxiter': max_iterations,
+                'gtol': 1e-8,      # Gradient tolerance (default: 1e-5)
+                'ftol': 1e-10,     # Function tolerance (default: 1e-5)
+                'eps': 1e-8        # Step size for finite difference (default: 1e-8)
+            }
         )
         
-
+        print(f"Optimization result:")
+        print(f"  Success: {result.success}")
+        print(f"  Message: {result.message}")
+        print(f"  Function evaluations: {result.nfev}")
+        print(f"  Iterations: {result.nit}")
+        print(f"  Final objective value: {result.fun}")
+        print(f"  Final gradient norm: {np.linalg.norm(result.jac) if hasattr(result, 'jac') and result.jac is not None else 'N/A'}")
+        print(f"  Parameter changes from initial:")
+        for i, param in enumerate(self.unknowns):
+            initial_val = x0[i]
+            final_val = result.x[i]
+            change = final_val - initial_val
+            print(f"    {param}: {initial_val:.6f} -> {final_val:.6f} (change: {change:+.6f})")
+        
+        if not result.success:
+            print(f"  WARNING: Optimization did not converge to desired accuracy!")
+            print(f"  Best solution found will be used, but may not be optimal.")
+        
+        # Perform sensitivity analysis if optimization didn't converge well or if parameters didn't move
+        if not result.success or result.nit < 10:
+            print(f"  Performing sensitivity analysis...")
+            self._sensitivity_analysis(knowns, unknowns, data_df, co2_df, result.x)
+        
+        # Check if any parameters didn't move from their initial values
+        unchanged_params = []
+        for i, param in enumerate(self.unknowns):
+            initial_val = x0[i]
+            final_val = result.x[i]
+            if abs(final_val - initial_val) < 1e-6:  # Essentially unchanged
+                unchanged_params.append(param)
+        
+        if unchanged_params:
+            print(f"  WARNING: Parameters that didn't change from initial values: {unchanged_params}")
+            print(f"  Performing detailed sensitivity analysis for unchanged parameters...")
+            self._detailed_sensitivity_analysis(knowns, unknowns, data_df, co2_df, result.x, unchanged_params)
         
         # Convert result to dictionary
         optimal_unknowns = dict(zip(self.unknowns, result.x))
         
         return optimal_unknowns
     
-    def objective_function_multi(self, unknown_values: np.ndarray, known_values: Dict[str, float], 
+    def _sensitivity_analysis(self, knowns: Dict[str, float], unknowns: Dict[str, List[float]], 
+                            data_df: pd.DataFrame, co2_df: Optional[pd.DataFrame], 
+                            optimal_values: np.ndarray, perturbation: float = 0.01):
+        """
+        Perform sensitivity analysis to check how the objective function responds to parameter changes.
+        
+        Args:
+            knowns: Dictionary of known parameter values
+            unknowns: Dictionary of unknown parameters with bounds
+            data_df: DataFrame with observed data
+            co2_df: Optional DataFrame with CO2 concentration data
+            optimal_values: Current optimal parameter values
+            perturbation: Fractional perturbation to test (default: 1%)
+        """
+        print(f"    Sensitivity analysis (perturbation: {perturbation*100:.1f}%):")
+        
+        # Get baseline objective value
+        baseline_obj = self.objective_function(optimal_values, knowns, data_df, co2_df)
+        print(f"      Baseline objective value: {baseline_obj:.6f}")
+        
+        for i, param in enumerate(self.unknowns):
+            param_value = optimal_values[i]
+            param_bounds = unknowns[param]
+            
+            # Test positive perturbation
+            if param_value + param_value * perturbation <= param_bounds[2]:  # Within upper bound
+                test_values = optimal_values.copy()
+                test_values[i] = param_value * (1 + perturbation)
+                test_obj = self.objective_function(test_values, knowns, data_df, co2_df)
+                pos_change = (test_obj - baseline_obj) / baseline_obj * 100
+                print(f"      {param} (+{perturbation*100:.1f}%): {test_obj:.6f} ({pos_change:+.2f}%)")
+            else:
+                print(f"      {param} (+{perturbation*100:.1f}%): BOUNDED")
+            
+            # Test negative perturbation
+            if param_value - param_value * perturbation >= param_bounds[0]:  # Within lower bound
+                test_values = optimal_values.copy()
+                test_values[i] = param_value * (1 - perturbation)
+                test_obj = self.objective_function(test_values, knowns, data_df, co2_df)
+                neg_change = (test_obj - baseline_obj) / baseline_obj * 100
+                print(f"      {param} (-{perturbation*100:.1f}%): {test_obj:.6f} ({neg_change:+.2f}%)")
+            else:
+                print(f"      {param} (-{perturbation*100:.1f}%): BOUNDED")
+    
+    def _detailed_sensitivity_analysis(self, knowns: Dict[str, float], unknowns: Dict[str, List[float]], 
+                                     data_df: pd.DataFrame, co2_df: Optional[pd.DataFrame], 
+                                     optimal_values: np.ndarray, unchanged_params: List[str]):
+        """
+        Perform detailed sensitivity analysis for parameters that didn't change during optimization.
+        
+        Args:
+            knowns: Dictionary of known parameter values
+            unknowns: Dictionary of unknown parameters with bounds
+            data_df: DataFrame with observed data
+            co2_df: Optional DataFrame with CO2 concentration data
+            optimal_values: Current optimal parameter values
+            unchanged_params: List of parameter names that didn't change
+        """
+        print(f"    Detailed sensitivity analysis for unchanged parameters:")
+        
+        # Get baseline objective value
+        baseline_obj = self.objective_function(optimal_values, knowns, data_df, co2_df)
+        print(f"      Baseline objective value: {baseline_obj:.6f}")
+        
+        for param in unchanged_params:
+            if param not in self.unknowns:
+                continue
+                
+            param_idx = self.unknowns.index(param)
+            param_value = optimal_values[param_idx]
+            param_bounds = unknowns[param]
+            
+            print(f"      Testing {param} (current: {param_value:.6f}, bounds: [{param_bounds[0]:.6f}, {param_bounds[2]:.6f}]):")
+            
+            # Test a range of values across the parameter space
+            test_values = [param_bounds[0], param_bounds[0] + (param_bounds[2] - param_bounds[0]) * 0.25,
+                          param_bounds[0] + (param_bounds[2] - param_bounds[0]) * 0.5,
+                          param_bounds[0] + (param_bounds[2] - param_bounds[0]) * 0.75, param_bounds[2]]
+            
+            for test_val in test_values:
+                test_values_array = optimal_values.copy()
+                test_values_array[param_idx] = test_val
+                test_obj = self.objective_function(test_values_array, knowns, data_df, co2_df)
+                change = (test_obj - baseline_obj) / baseline_obj * 100
+                print(f"        {test_val:.6f}: {test_obj:.6f} ({change:+.2f}%)")
+    
+    def objective_function_multi(self, unknown_values: np.ndarray, knowns: Dict[str, float], 
                                 data_dfs: List[pd.DataFrame], co2_dfs: Optional[List[pd.DataFrame]] = None) -> float:
         """
         Objective function for multi-DataFrame optimization: Combined MSE across all DataFrames.
         
         Args:
             unknown_values: Array of unknown parameter values
-            known_values: Dictionary of known parameter values
+            knowns: Dictionary of known parameter values
             data_dfs: List of DataFrames with observed data
             co2_dfs: Optional list of DataFrames with CO2 concentration data
             
         Returns:
             Combined mean squared error across all DataFrames
         """
+        # Track function evaluations for max_iterations enforcement
+        if not hasattr(self, '_function_eval_count'):
+            self._function_eval_count = 0
+        self._function_eval_count += 1
+        
+        # Check if we've exceeded max function evaluations
+        if hasattr(self, '_max_function_evals') and self._function_eval_count > self._max_function_evals:
+            print(f"  WARNING: Exceeded {self._max_function_evals} function evaluations. Returning high penalty.")
+            return 1e6  # Return very high value to force termination
+        
         # Convert unknown_values array to dictionary
         unknown_dict = dict(zip(self.unknowns, unknown_values))
         
         # Create complete parameter dictionary
-        params = self.create_parameter_dict(known_values, unknown_dict)
+        params = self.create_parameter_dict(knowns, unknown_dict)
         
         total_mse = 0.0
         total_points = 0
@@ -683,7 +909,7 @@ class CoinBGC:
             co2_df = co2_dfs[i]
             
             # Run model for this DataFrame
-            results = self.execute_model(data_df, known_values, co2_df)
+            results = self.execute_model(data_df, params, co2_df)
             
             # Calculate MSE for this DataFrame
             mse = np.mean((results['gpp_data'] - results['GPP_model']) ** 2)
@@ -696,10 +922,9 @@ class CoinBGC:
         # Return average MSE across all DataFrames
         return total_mse / total_points
     
-    def optimize_parameters_multi(self, known_values: Dict[str, float], data_dfs: List[pd.DataFrame],
-                                initial_guesses: Optional[Dict[str, float]] = None,
-                                bounds: Optional[List[Tuple[float, float]]] = None,
-                                co2_dfs: Optional[List[pd.DataFrame]] = None) -> Dict[str, float]:
+    def optimize_parameters_multi(self, knowns: Dict[str, float], unknowns: Dict[str, List[float]], 
+                                data_dfs: List[pd.DataFrame], co2_dfs: Optional[List[pd.DataFrame]] = None,
+                                max_iterations: int = 100000) -> Dict[str, float]:
         """
         Multi-DataFrame Optimization Routine: Optimize for the unknowns given the knowns.
         
@@ -709,31 +934,60 @@ class CoinBGC:
         MSE across all simulations.
         
         Args:
-            known_values: Dictionary of known parameter values
+            knowns: Dictionary of known parameter values {param_name: value}
+            unknowns: Dictionary of unknown parameters with [lower_bound, initial_guess, upper_bound]
             data_dfs: List of DataFrames with observed data
-            initial_guesses: Dictionary of initial guesses for unknown parameters
-            bounds: List of (min, max) bounds for unknown parameters
             co2_dfs: Optional list of DataFrames with CO2 concentration data
+            max_iterations: Maximum number of iterations for optimization (default: 100000)
             
         Returns:
             Dictionary of optimal values for unknown parameters
         """
+        # Set parameter sets for this optimization
+        self.set_parameter_sets(list(knowns.keys()), list(unknowns.keys()))
+        
+        # Reset function evaluation counter and set max
+        self._function_eval_count = 0
+        self._max_function_evals = max_iterations * 10  # Allow 10x more function evaluations than iterations
+        
         # Create initial guess array
-        x0 = np.array([initial_guesses[param] for param in self.unknowns])
+        x0 = np.array([unknowns[param][1] for param in self.unknowns])
         
         # Create bounds array
-        bounds_array = [bounds[i] for i, param in enumerate(self.unknowns)]
+        bounds_array = [(unknowns[param][0], unknowns[param][2]) for param in self.unknowns]
         
         # Run optimization
         result = minimize(
             fun=self.objective_function_multi,
             x0=x0,
-            args=(known_values, data_dfs, co2_dfs),
+            args=(knowns, data_dfs, co2_dfs),
             bounds=bounds_array,
-            method='L-BFGS-B'
+            method='L-BFGS-B',
+            options={
+                'maxiter': max_iterations,
+                'gtol': 1e-8,      # Gradient tolerance (default: 1e-5)
+                'ftol': 1e-10,     # Function tolerance (default: 1e-5)
+                'eps': 1e-8        # Step size for finite difference (default: 1e-8)
+            }
         )
         
-
+        print(f"Multi-optimization result:")
+        print(f"  Success: {result.success}")
+        print(f"  Message: {result.message}")
+        print(f"  Function evaluations: {result.nfev}")
+        print(f"  Iterations: {result.nit}")
+        print(f"  Final objective value: {result.fun}")
+        print(f"  Final gradient norm: {np.linalg.norm(result.jac) if hasattr(result, 'jac') and result.jac is not None else 'N/A'}")
+        print(f"  Parameter changes from initial:")
+        for i, param in enumerate(self.unknowns):
+            initial_val = x0[i]
+            final_val = result.x[i]
+            change = final_val - initial_val
+            print(f"    {param}: {initial_val:.6f} -> {final_val:.6f} (change: {change:+.6f})")
+        
+        if not result.success:
+            print(f"  WARNING: Multi-optimization did not converge to desired accuracy!")
+            print(f"  Best solution found will be used, but may not be optimal.")
         
         # Convert result to dictionary
         optimal_unknowns = dict(zip(self.unknowns, result.x))
@@ -879,35 +1133,7 @@ def run_optimizations(piControl_data: pd.DataFrame, full_data: pd.DataFrame, bgc
         'Ktfp_pr1': 0.0,
         'Ktfp_pr2': 0.0,
         'Ktfp_co2_max': 0.0,
-        'Ktfp_co2': 0.0
-    }
-    
-
-    
-    # Step 2.2: Set reference values to historical means
-    Ktfp_tas0 = tas_mean
-    Ktfp_pr0 = pr_mean
-    
-    # Collect Step 2.2 parameters (same as step2_1 but with updated reference values)
-    step2_2_params = step2_1_params.copy()
-    step2_2_params['Ktfp_tas0'] = Ktfp_tas0
-    step2_2_params['Ktfp_pr0'] = Ktfp_pr0
-    
-    # Add to parameter dictionary
-    all_parameter_results[(region, model, 'step2_2')] = {
-        'Ksoil_0': Ksoil_0,
-        'alpha': alpha,
-        'Kresp_0': Kresp_0,
-        'Cland_0': Cland_0,
-        'Ktfp_0': Ktfp_0,
-        'Ktfp_tas0': Ktfp_tas0,
-        'Ktfp_pr0': Ktfp_pr0,
-        'Ktfp_tas1': 0.0,
-        'Ktfp_tas2': 0.0,
-        'Ktfp_pr1': 0.0,
-        'Ktfp_pr2': 0.0,
-        'Ktfp_co2_max': 0.0,
-        'Ktfp_co2': 0.0
+'Ktfp_co2_half': 0.0
     }
     
     # Initialize parameters dictionary
@@ -917,55 +1143,101 @@ def run_optimizations(piControl_data: pd.DataFrame, full_data: pd.DataFrame, bgc
         'Kresp_0': Kresp_0,
         'Cland_0': Cland_0,
         'Ktfp_0': Ktfp_0,
-        'Ktfp_tas0': Ktfp_tas0,
-        'Ktfp_pr0': Ktfp_pr0,
+        'Ktfp_tas0': tas_mean,
+        'Ktfp_pr0': pr_mean,
         'Ktfp_tas1': 0.0,
         'Ktfp_tas2': 0.0,
         'Ktfp_pr1': 0.0,
         'Ktfp_pr2': 0.0,
-        'Ktfp_co2': 0.0,
-        'Ktfp_co2_max': 0.0
+        'Ktfp_co2_half': 0.0
     }
     
 
     
-    # Step 2.3: Optimize Cland_0, Ktfp_0, Ktfp_tas1, Ktfp_tas2, Ktfp_pr1, Ktfp_pr2 using historical data
-    print("\n=== Step 2.3: Optimizing climate sensitivity parameters using historical data ===")
+    # Step 2.2: Optimize Cland_0, Ktfp_0, Ktfp_tas1, Ktfp_tas2, Ktfp_pr1, Ktfp_pr2 using historical data
+    print("\n=== Step 2.2: Optimizing climate sensitivity parameters using historical data ===")
     
     # Use historical portion of full_data for step 2.3 optimization
     historical_data = full_data[full_data['year'] <= 2014].copy()  # Historical period
     
-    # Set knowns and unknowns for this step
-    knowns = ['Ksoil_0', 'alpha', 'Kresp_0', 'Ktfp_tas0', 'Ktfp_pr0', 'Ktfp_co2', 'Ktfp_co2_max']
-    unknowns = ['Cland_0', 'Ktfp_0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr1', 'Ktfp_pr2']
-    
-    model_instance.set_parameter_sets(knowns, unknowns)
-    
-    # Create initial guesses and bounds
-    initial_guesses = {
+    # Define known and unknown parameters for this step
+    knowns_dict = {
+        'Ksoil_0': Ksoil_0,
+        'alpha': alpha,
+        'Kresp_0': Kresp_0,
         'Cland_0': Cland_0,
-        'Ktfp_0': Ktfp_0,
-        'Ktfp_tas1': 0.0,
-        'Ktfp_tas2': 0.0,
-        'Ktfp_pr1': 0.0,
-        'Ktfp_pr2': 0.0
+        'Ktfp_tas0': tas_mean,
+        'Ktfp_pr0': pr_mean,
+        'Ktfp_co2_half': 0.0
     }
     
-    bounds = [
-        (min(Cland_0 * 0.5, Cland_0 * 2.0), max(Cland_0 * 0.5, Cland_0 * 2.0)),      # Cland_0
-        (min(Ktfp_0 * 0.5, Ktfp_0 * 2.0), max(Ktfp_0 * 0.5, Ktfp_0 * 2.0)),        # Ktfp_0
-        (-0.1, 0.1),                         # Ktfp_tas1
-        (-0.01, 0.01),                       # Ktfp_tas2
-        (-0.1, 0.1),                         # Ktfp_pr1
-        (-0.01, 0.01)                        # Ktfp_pr2
-    ]
+    unknowns_dict = {
+        'Ktfp_0': [Ktfp_0 * 0.5, Ktfp_0, Ktfp_0 * 2.0],
+        'Ktfp_tas1': [-0.4, 0.001, 0.4],
+        'Ktfp_tas2': [-0.04, 0.001, 0.04],
+        'Ktfp_pr1': [-0.4, 0.001, 0.4],
+        'Ktfp_pr2': [-0.04, 0.001, 0.04]
+    }
+    
+    print(f"Step 2.2 optimization setup:")
+    print(f"  Known parameters: {list(knowns_dict.keys())}")
+    print(f"  Unknown parameters: {list(unknowns_dict.keys())}")
+    print(f"  Known values: {knowns_dict}")
+    print(f"  Unknown specifications: {unknowns_dict}")
+    print(f"  Historical data points: {len(historical_data)}")
     
     # Run optimization
     optimal_params = model_instance.optimize_parameters(
-        known_values={param: params[param] for param in knowns},
+        knowns=knowns_dict,
+        unknowns=unknowns_dict,
         data_df=historical_data,
-        initial_guesses=initial_guesses,
-        bounds=bounds
+        co2_df=co2_data
+    )
+    
+    # Update parameters with optimized values
+    for param, value in optimal_params.items():
+        params[param] = value
+    
+    print(f"Step 2.2 optimization results:")
+    for param, value in optimal_params.items():
+        print(f"  {param}: {value:.6f}")
+    
+    # Collect Step 2.2 results
+    step2_2_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2']}
+    
+    # Add to parameter dictionary
+    all_parameter_results[(region, model, 'step2_2')] = params.copy()
+    
+
+    
+    # Step 2.3: Optimize CO2 fertilization parameter using bgc_data
+    print("\n=== Step 2.3: Optimizing CO2 parameters using bgc_data ===")
+    
+    # Define known and unknown parameters for this step
+    knowns_dict = {
+        'Ksoil_0': Ksoil_0,
+        'alpha': alpha,
+        'Kresp_0': params['Kresp_0'],
+        'Cland_0': params['Cland_0'],
+        'Ktfp_0': params['Ktfp_0'],
+        'Ktfp_tas0': params['Ktfp_tas0'],
+        'Ktfp_tas1': params['Ktfp_tas1'],
+        'Ktfp_tas2': params['Ktfp_tas2'],
+        'Ktfp_pr0': params['Ktfp_pr0'],
+        'Ktfp_pr1': params['Ktfp_pr1'],
+        'Ktfp_pr2': params['Ktfp_pr2']
+    }
+    
+    unknowns_dict = {
+        'Ktfp_co2_half': [100.0, 1000.0, 10000.0]
+    }
+    
+    # Run optimization
+    optimal_params = model_instance.optimize_parameters(
+        knowns=knowns_dict,
+        unknowns=unknowns_dict,
+        data_df=bgc_data,
+        co2_df=co2_data
     )
     
     # Update parameters with optimized values
@@ -977,40 +1249,41 @@ def run_optimizations(piControl_data: pd.DataFrame, full_data: pd.DataFrame, bgc
         print(f"  {param}: {value:.6f}")
     
     # Collect Step 2.3 results
-    step2_3_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2']}
+    step2_3_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_half']}
     
     # Add to parameter dictionary
     all_parameter_results[(region, model, 'step2_3')] = params.copy()
     
 
     
-    # Step 2.4: Optimize Ktfp_co2_max and Ktfp_co2 using bgc_data
-    print("\n=== Step 2.4: Optimizing CO2 parameters using bgc_data ===")
+    # Step 2.4: Optimize all parameters using bgc_data and piControl_data
+    print("\n=== Step 2.4: Optimizing all parameters using bgc_data and piControl_data ===")
     
-    # Set knowns and unknowns for this step
-    knowns = ['Ksoil_0', 'alpha', 'Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2']
-    unknowns = ['Ktfp_co2_max', 'Ktfp_co2']
-    
-    model_instance.set_parameter_sets(knowns, unknowns)
-    
-    # Create initial guesses and bounds
-    initial_guesses = {
-        'Ktfp_co2_max': 0.0,
-        'Ktfp_co2': 0.0
+    # Define known and unknown parameters for this step
+    knowns_dict = {
+        'Ksoil_0': Ksoil_0,
+        'alpha': alpha,
+        'Kresp_0': params['Kresp_0'],
+        'Cland_0': params['Cland_0'],
+        'Ktfp_tas0': params['Ktfp_tas0'],
+        'Ktfp_pr0': params['Ktfp_pr0']
     }
     
-    bounds = [
-        (0.5, 2.0),                          # Ktfp_co2_max
-        (5.0, 20.0)                          # Ktfp_co2
-    ]
+    unknowns_dict = {
+        'Ktfp_0': [params['Ktfp_0'] * 0.5, params['Ktfp_0'], params['Ktfp_0'] * 2.0],
+        'Ktfp_tas1': [-0.4, params['Ktfp_tas1'], 0.4],
+        'Ktfp_tas2': [-0.04, params['Ktfp_tas2'], 0.04],
+        'Ktfp_pr1': [-0.4, params['Ktfp_pr1'], 0.4],
+        'Ktfp_pr2': [-0.04, params['Ktfp_pr2'], 0.04],
+        'Ktfp_co2_half': [100.0,  params['Ktfp_co2_half'], 10000.0]
+    }
     
-    # Run optimization
-    optimal_params = model_instance.optimize_parameters(
-        known_values={param: params[param] for param in knowns},
-        data_df=bgc_data,
-        initial_guesses=initial_guesses,
-        bounds=bounds,
-        co2_df=co2_data
+    # Run multi-DataFrame optimization
+    optimal_params = model_instance.optimize_parameters_multi(
+        knowns=knowns_dict,
+        unknowns=unknowns_dict,
+        data_dfs=[bgc_data, piControl_data],
+        co2_dfs=[co2_data, None]  # CO2 data for bgc_data, None for piControl_data
     )
     
     # Update parameters with optimized values
@@ -1022,46 +1295,41 @@ def run_optimizations(piControl_data: pd.DataFrame, full_data: pd.DataFrame, bgc
         print(f"  {param}: {value:.6f}")
     
     # Collect Step 2.4 results
-    step2_4_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_max', 'Ktfp_co2']}
+    step2_4_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_half']}
     
     # Add to parameter dictionary
     all_parameter_results[(region, model, 'step2_4')] = params.copy()
     
 
     
-    # Step 2.5: Optimize all parameters using bgc_data and piControl_data
-    print("\n=== Step 2.5: Optimizing all parameters using bgc_data and piControl_data ===")
+    # Step 2.5: Final optimization of climate sensitivity parameters using all data
+    print("\n=== Step 2.5: Final optimization of climate sensitivity parameters using all data ===")
     
-    # Set knowns and unknowns for this step
-    knowns = ['Ksoil_0', 'alpha']  # Only keep command line parameters as knowns
-    unknowns = ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_max', 'Ktfp_co2']
+    # Define known and unknown parameters for this step
+    knowns_dict = {
+        'Ksoil_0': Ksoil_0,
+        'alpha': alpha,
+        'Kresp_0': params['Kresp_0'],
+        'Cland_0': params['Cland_0'],
+        'Ktfp_0': params['Ktfp_0'],
+        'Ktfp_tas0': params['Ktfp_tas0'],
+        'Ktfp_pr0': params['Ktfp_pr0'],
+        'Ktfp_co2_half': params['Ktfp_co2_half']
+    }
     
-    model_instance.set_parameter_sets(knowns, unknowns)
-    
-    # Create initial guesses and bounds
-    initial_guesses = {param: params[param] for param in unknowns}
-    
-    bounds = [
-        (0.1, 0.9),                          # Kresp_0
-        (min(params['Cland_0'] * 0.5, params['Cland_0'] * 2.0), max(params['Cland_0'] * 0.5, params['Cland_0'] * 2.0)),  # Cland_0
-        (min(params['Ktfp_0'] * 0.5, params['Ktfp_0'] * 2.0), max(params['Ktfp_0'] * 0.5, params['Ktfp_0'] * 2.0)),    # Ktfp_0
-        (params['Ktfp_tas0'] - abs(params['Ktfp_tas0']) * 0.5, params['Ktfp_tas0'] + abs(params['Ktfp_tas0']) * 0.5),  # Ktfp_tas0
-        (-0.1, 0.1),                         # Ktfp_tas1
-        (-0.01, 0.01),                       # Ktfp_tas2
-        (min(params['Ktfp_pr0'] * 0.5, params['Ktfp_pr0'] * 2.0), max(params['Ktfp_pr0'] * 0.5, params['Ktfp_pr0'] * 2.0)),  # Ktfp_pr0
-        (-0.1, 0.1),                         # Ktfp_pr1
-        (-0.01, 0.01),                       # Ktfp_pr2
-        (0.5, 2.0),                          # Ktfp_co2_max
-        (5.0, 20.0)                          # Ktfp_co2
-    ]
+    unknowns_dict = {
+        'Ktfp_tas1': [-0.4, params['Ktfp_tas1'], 0.4],
+        'Ktfp_tas2': [-0.04, params['Ktfp_tas2'], 0.04],
+        'Ktfp_pr1': [-0.4, params['Ktfp_pr1'], 0.4],
+        'Ktfp_pr2': [-0.04, params['Ktfp_pr2'], 0.04]
+    }
     
     # Run multi-DataFrame optimization
     optimal_params = model_instance.optimize_parameters_multi(
-        known_values={param: params[param] for param in knowns},
-        data_dfs=[bgc_data, piControl_data],
-        initial_guesses=initial_guesses,
-        bounds=bounds,
-        co2_dfs=[co2_data, None]  # CO2 data for bgc_data, None for piControl_data
+        knowns=knowns_dict,
+        unknowns=unknowns_dict,
+        data_dfs=[piControl_data, bgc_data, full_data],
+        co2_dfs=[None, co2_data, co2_data]  # CO2 data for bgc_data and full_data, None for piControl_data
     )
     
     # Update parameters with optimized values
@@ -1073,38 +1341,41 @@ def run_optimizations(piControl_data: pd.DataFrame, full_data: pd.DataFrame, bgc
         print(f"  {param}: {value:.6f}")
     
     # Collect Step 2.5 results
-    step2_5_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_max', 'Ktfp_co2']}
+    step2_5_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_half']}
     
     # Add to parameter dictionary
     all_parameter_results[(region, model, 'step2_5')] = params.copy()
     
 
     
-    # Step 2.6: Final optimization of climate sensitivity parameters using all data
-    print("\n=== Step 2.6: Final optimization of climate sensitivity parameters using all data ===")
+    # Step 2.6: Complete optimization using all datasets (formerly Step 3)
+    print("\n=== Step 2.6: Complete optimization using all datasets ===")
     
-    # Set knowns and unknowns for this step
-    knowns = ['Ksoil_0', 'alpha', 'Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_pr0', 'Ktfp_co2_max', 'Ktfp_co2']
-    unknowns = ['Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr1', 'Ktfp_pr2']
+    # Define known and unknown parameters for complete optimization
+    knowns_dict = {
+        'Ksoil_0': Ksoil_0,
+        'alpha': alpha,
+        'Kresp_0': params['Kresp_0'],
+        'Cland_0': params['Cland_0'],
+        'Ktfp_tas0': params['Ktfp_tas0'],
+        'Ktfp_pr0': params['Ktfp_pr0']
+    }
     
-    model_instance.set_parameter_sets(knowns, unknowns)
+    # Define unknowns dictionary with explicit bounds for each parameter
+    unknowns_dict = {
+        'Ktfp_0': [params['Ktfp_0'] * 0.5, params['Ktfp_0'], params['Ktfp_0'] * 2.0],
+        'Ktfp_tas1': [-0.4, params['Ktfp_tas1'], 0.4],
+        'Ktfp_tas2': [-0.04, params['Ktfp_tas2'], 0.04],
+        'Ktfp_pr1': [-0.4, params['Ktfp_pr1'], 0.4],
+        'Ktfp_pr2': [-0.04, params['Ktfp_pr2'], 0.04],
+        'Ktfp_co2_half': [100.0, params['Ktfp_co2_half'], 10000.0]
+    }
     
-    # Create initial guesses and bounds
-    initial_guesses = {param: params[param] for param in unknowns}
-    
-    bounds = [
-        (-0.1, 0.1),                         # Ktfp_tas1
-        (-0.01, 0.01),                       # Ktfp_tas2
-        (-0.1, 0.1),                         # Ktfp_pr1
-        (-0.01, 0.01)                        # Ktfp_pr2
-    ]
-    
-    # Run multi-DataFrame optimization
+    # Run multi-DataFrame optimization using all datasets
     optimal_params = model_instance.optimize_parameters_multi(
-        known_values={param: params[param] for param in knowns},
+        knowns=knowns_dict,
+        unknowns=unknowns_dict,
         data_dfs=[piControl_data, bgc_data, full_data],
-        initial_guesses=initial_guesses,
-        bounds=bounds,
         co2_dfs=[None, co2_data, co2_data]  # CO2 data for bgc_data and full_data, None for piControl_data
     )
     
@@ -1117,77 +1388,10 @@ def run_optimizations(piControl_data: pd.DataFrame, full_data: pd.DataFrame, bgc
         print(f"  {param}: {value:.6f}")
     
     # Collect Step 2.6 results
-    step2_6_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_max', 'Ktfp_co2']}
+    step2_6_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_half']}
     
     # Add to parameter dictionary
     all_parameter_results[(region, model, 'step2_6')] = params.copy()
-    
-
-    
-    # Step 2.7: Complete optimization using all datasets (formerly Step 3)
-    print("\n=== Step 2.7: Complete optimization using all datasets ===")
-    
-    # Set knowns and unknowns for complete optimization
-    knowns = ['Ksoil_0', 'alpha']  # Only command line parameters are known
-    unknowns = ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_max', 'Ktfp_co2']
-    
-    model_instance.set_parameter_sets(knowns, unknowns)
-    
-    # Create initial guesses from current results
-    initial_guesses = {param: params[param] for param in unknowns}
-    
-    # Create bounds based on parameter physical constraints
-    bounds = []
-    for param in unknowns:
-        value = params[param]
-        
-        if param == 'Kresp_0':
-            # Plant respiration fraction: 0.1 to 0.9
-            bounds.append((0.1, 0.9))
-        elif param in ['Cland_0', 'Ktfp_0', 'Ktfp_pr0', 'Ktfp_co2', 'Ktfp_co2_max']:
-            # Must be positive: half to twice the value
-            lower = min(value * 0.5, value * 2.0)
-            upper = max(value * 0.5, value * 2.0)
-            bounds.append((lower, upper))
-        elif param == 'Ktfp_tas0':
-            # Reference temperature: can be negative, use wider bounds
-            lower = value - abs(value) * 0.5
-            upper = value + abs(value) * 0.5
-            bounds.append((lower, upper))
-        elif param in ['Ktfp_tas1', 'Ktfp_pr1']:
-            # Climate sensitivity: can be negative, use fixed bounds
-            bounds.append((-0.1, 0.1))  # Linear terms
-        elif param in ['Ktfp_tas2', 'Ktfp_pr2']:
-            # Climate sensitivity: can be negative, use fixed bounds
-            bounds.append((-0.01, 0.01))  # Quadratic terms
-        else:
-            # Default: half to twice the value
-            lower = min(value * 0.5, value * 2.0)
-            upper = max(value * 0.5, value * 2.0)
-            bounds.append((lower, upper))
-    
-    # Run multi-DataFrame optimization using all datasets
-    optimal_params = model_instance.optimize_parameters_multi(
-        known_values={param: params[param] for param in knowns},
-        data_dfs=[piControl_data, bgc_data, full_data],
-        initial_guesses=initial_guesses,
-        bounds=bounds,
-        co2_dfs=[None, co2_data, co2_data]  # CO2 data for bgc_data and full_data, None for piControl_data
-    )
-    
-    # Update parameters with optimized values
-    for param, value in optimal_params.items():
-        params[param] = value
-    
-    print(f"Step 2.7 optimization results:")
-    for param, value in optimal_params.items():
-        print(f"  {param}: {value:.6f}")
-    
-    # Collect Step 2.7 results
-    step2_7_params = {param: params[param] for param in ['Kresp_0', 'Cland_0', 'Ktfp_0', 'Ktfp_tas0', 'Ktfp_tas1', 'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2', 'Ktfp_co2_max', 'Ktfp_co2']}
-    
-    # Add to parameter dictionary
-    all_parameter_results[(region, model, 'step2_7')] = params.copy()
     
 
     
@@ -1231,7 +1435,7 @@ def run_all_simulations(optimization_results: Dict[str, Dict[str, float]], regio
             model_instance = CoinBGC()
             
             # Run simulations for each step using the exact parameters
-            steps_to_run = ['step2_1', 'step2_2', 'step2_3', 'step2_4', 'step2_5', 'step2_6', 'step2_7', 'piControl', 'full', 'bgc']
+            steps_to_run = ['step2_1', 'step2_2', 'step2_3', 'step2_4', 'step2_5', 'step2_6', 'piControl', 'full', 'bgc']
             
             for step in steps_to_run:
                 param_key = (region, model, step)
@@ -1243,8 +1447,10 @@ def run_all_simulations(optimization_results: Dict[str, Dict[str, float]], regio
                 params = all_parameter_results[param_key]
                 
                 # Choose appropriate data and run simulation
-                if step in ['step2_1', 'step2_2', 'step2_3', 'piControl']:
+                if step in ['step2_1', 'step2_2', 'piControl']:
                     sim = model_instance.execute_model(piControl_data, params)
+                elif step == 'step2_3':
+                    sim = model_instance.execute_model(bgc_data, params, co2_data)
                 elif step in ['step2_4', 'step2_5', 'step2_6', 'full', 'bgc']:
                     if step == 'bgc':
                         sim = model_instance.execute_model(bgc_data, params, co2_data)
@@ -1390,8 +1596,8 @@ def create_pdf_books_from_simulation_results(simulation_results: Dict[str, Dict[
                     try:
                         # Extract parameters from the actual simulation data
                         param_columns = ['Ksoil_0', 'Kresp_0', 'Ktfp_0', 'alpha', 'Cland_0', 
-                                       'Ktfp_co2', 'Ktfp_co2_max', 'Ktfp_tas0', 'Ktfp_tas1', 
-                                       'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2']
+                                        'Ktfp_co2_half', 'Ktfp_tas0', 'Ktfp_tas1', 
+                                        'Ktfp_tas2', 'Ktfp_pr0', 'Ktfp_pr1', 'Ktfp_pr2']
                         
                         # Get parameters from the first row (they should be constant throughout simulation)
                         first_row = sim_df.iloc[0]
@@ -1454,7 +1660,7 @@ def create_pdf_books_from_simulation_results(simulation_results: Dict[str, Dict[
     print(f"BGC vs Full comparison book saved to: {bgc_full_pdf_path}")
 
 
-def run_main_analysis(regions: List[str], models: List[str], Ksoil_0: float, alpha: float) -> Dict[str, Dict[str, float]]:
+def run_main_analysis(regions: List[str], models: List[str], Ksoil_0: float, alpha: float, max_iterations: int = 100000) -> Dict[str, Dict[str, float]]:
     """
     Main analysis function that orchestrates the complete COIN-BGC analysis.
     
@@ -1551,7 +1757,7 @@ def example_usage():
     
     # Define known and unknown parameters
     knowns = ['Ksoil_0', 'alpha']  # User specifies these
-    unknowns = ['Ktfp_0', 'Kresp_0', 'Ktfp_co2']  # System optimizes these
+    unknowns = ['Ktfp_0', 'Kresp_0', 'Ktfp_co2_half']  # System optimizes these
     
     # Set the parameter sets
     model.set_parameter_sets(knowns, unknowns)
@@ -1572,26 +1778,40 @@ def example_usage():
         'alpha': 0.5,
         'Ktfp_0': 2.0,
         'Cland_0': 100.0,
-        'Ktfp_co2': 10.0,
-        'Ktfp_co2_max': 1.0
+        'Ktfp_co2_half': 10.0
     }
     
     # Example 1: Basic model execution
     print("=== Example 1: Basic Model Execution ===")
-    results = model.execute_model(sample_data, known_values)
+    # Create complete parameter dictionary for example
+    complete_params = model.create_parameter_dict(known_values)
+    results = model.execute_model(sample_data, complete_params)
     print("Model execution results:")
     print(results[['year', 'gpp_data', 'GPP_model', 'Cland']].head())
     
     # Example 2: Parameter optimization
     print("\n=== Example 2: Parameter Optimization ===")
-    optimal_unknowns = model.optimize_parameters(known_values, sample_data)
+    # Define known and unknown parameters for example
+    example_knowns = {
+        'Ksoil_0': 0.1,
+        'alpha': 0.5,
+        'Cland_0': 100.0,
+        'Ktfp_co2_half': 10.0
+    }
+    example_unknowns = {
+        'Ktfp_0': [2.0, 1.0, 5.0],
+        'Kresp_0': [0.3, 0.1, 0.9]
+    }
+    optimal_unknowns = model.optimize_parameters(example_knowns, example_unknowns, sample_data)
     print("Optimal unknown parameters:")
     for param, value in optimal_unknowns.items():
         print(f"  {param}: {value:.6f}")
     
     # Example 3: Run model with optimized parameters
     print("\n=== Example 3: Model with Optimized Parameters ===")
-    optimized_results = model.execute_model(sample_data, known_values)
+    # Create complete parameter dictionary with optimized values
+    optimized_params = model.create_parameter_dict(known_values, optimal_unknowns)
+    optimized_results = model.execute_model(sample_data, optimized_params)
     print("Optimized model results:")
     print(optimized_results[['year', 'gpp_data', 'GPP_model', 'Cland']].head())
 

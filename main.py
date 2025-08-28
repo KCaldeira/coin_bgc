@@ -84,6 +84,14 @@ Examples:
         help='Enable verbose output'
     )
     
+    # Optimization options
+    parser.add_argument(
+        '--max-iterations', 
+        type=int, 
+        default=100000,
+        help='Maximum number of iterations for optimization (default: 100000)'
+    )
+    
     return parser.parse_args()
 
 
@@ -184,7 +192,7 @@ def main():
     
     try:
         # Run the main analysis
-        results = run_main_analysis(args.regions, args.models, args.Ksoil_0, args.alpha)
+        results = run_main_analysis(args.regions, args.models, args.Ksoil_0, args.alpha, args.max_iterations)
         
         # Print results summary
         print(f"\n=== Analysis Complete ===")
