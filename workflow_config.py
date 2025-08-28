@@ -15,10 +15,11 @@ from dataclasses import dataclass
 @dataclass
 class ParameterSpec:
     """Specification for a parameter in the workflow."""
-    name: str
-    source: str
+    name: Optional[str] = None
+    source: Optional[str] = None
     value: Optional[float] = None
     step: Optional[str] = None
+    range: Optional[List[float]] = None
     bounds_type: Optional[str] = None
     bounds_data: Optional[List[float]] = None
 
@@ -132,6 +133,7 @@ class WorkflowConfigLoader:
                 source=source,
                 value=param_spec.get('value'),
                 step=param_spec.get('step'),
+                range=param_spec.get('range'),
                 bounds_type=param_spec.get('bounds'),
                 bounds_data=param_spec.get('range') or param_spec.get('factor')
             )
@@ -146,12 +148,12 @@ class WorkflowConfigLoader:
     def _parse_workflow_step(self, step_data: Dict[str, Any]) -> WorkflowStep:
         """Parse a workflow step specification."""
         # Validate required fields
-        required_fields = ['name', 'description', 'type', 'data_sources']
+        required_fields = ['name', 'description', 'step_type', 'data_sources']
         for field in required_fields:
             if field not in step_data:
                 raise ValueError(f"Missing required field '{field}' in step")
         
-        step_type = step_data['type']
+        step_type = step_data['step_type']
         if step_type not in self.valid_step_types:
             raise ValueError(f"Invalid step type: {step_type}")
         

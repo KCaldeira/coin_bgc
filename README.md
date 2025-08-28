@@ -1,73 +1,93 @@
-# COIN-BGC: Clean Implementation
+# COIN-BGC: JSON-Driven Flexible Workflow System
 
-A clean implementation of the COIN-BGC (Carbon-Oxygen-Interactive-Network Biogeochemical Cycle) model for land-surface climate change simulation using a Solow-Swan growth model approach.
+A flexible, JSON-driven implementation of the COIN-BGC (Carbon-Oxygen-Interactive-Network Biogeochemical Cycle) model for land-surface climate change simulation using a Solow-Swan growth model approach.
 
 ## Overview
 
-This implementation provides a clean, modular architecture for parameter optimization and forward simulation of land-surface biogeochemical cycles under climate change scenarios. The system uses a step-by-step optimization approach to calibrate model parameters using multiple datasets.
+This implementation provides a flexible, configuration-driven architecture for parameter optimization and forward simulation of land-surface biogeochemical cycles under climate change scenarios. The system uses JSON workflow files to define optimization sequences, making it easy to modify workflows without changing code.
 
 ## Architecture
 
 ### Core Components
 
-1. **`CoinBGC` Class**: The main model implementation with optimization capabilities
-2. **`run_optimizations()`**: Unified function that runs all optimization steps (2.1 through 2.6)
-3. **`run_all_simulations()`**: Runs forward simulations using optimized parameters
-4. **`run_main_analysis()`**: Orchestrates the complete analysis workflow
+1. **`main.py`**: Main controller with three-step execution (load data/config, execute workflow, generate output)
+2. **`CoinBGC` Class**: The core model implementation with unified optimization capabilities
+3. **`WorkflowConfigLoader`**: JSON workflow configuration loading and validation
+4. **`workflow_config.py`**: Configuration management and parameter resolution system
 
-### Optimization Steps
+### JSON Workflow System
 
-The system uses a unified optimization approach with the following steps:
+The system uses JSON configuration files to define flexible optimization workflows:
 
-- **Step 2.1**: Calculate initial parameters from piControl data
-- **Step 2.2**: Optimize climate sensitivity parameters using historical data
-- **Step 2.3**: Optimize CO2 parameters using bgc_data
-- **Step 2.4**: Optimize all parameters using bgc_data and piControl_data
-- **Step 2.5**: Final optimization of climate sensitivity parameters using all data
-- **Step 2.6**: Complete optimization using all datasets
+- **Step Types**: `calculation`, `optimization` (handles both single and multi-dataset optimizations)
+- **Parameter Sources**: `global` (user input), `step` (from previous step), `value` (direct value)
+- **Data Sources**: Flexible assignment of datasets to optimization steps
+- **Parameter Bounds**: Simple `[lower, initial, upper]` format for all optimization parameters
 
-### Parameter Dictionary Structure
+### Example JSON Configuration
 
-The system uses a clean parameter dictionary structure with `(region, model, step)` tuples as keys:
-
-```python
-all_parameter_results = {
-    ('Brazil', 'ACCESS-ESM1-5', 'step2_1'): {complete_parameter_set},
-    ('Brazil', 'ACCESS-ESM1-5', 'step2_2'): {complete_parameter_set},
-    # ... all steps for all regions/models
+```json
+{
+  "workflow_name": "COIN-BGC Standard Pipeline",
+  "global_parameters": {
+    "Ksoil_0": {"source": "user_input"},
+    "alpha": {"source": "user_input"}
+  },
+  "steps": [
+    {
+      "name": "step2_1",
+      "step_type": "calculation",
+      "data_sources": ["piControl"],
+      "calculations": {
+        "Kresp_0": "1 - npp_mean / gpp_mean",
+        "Cland_0": "npp_mean / Ksoil_0"
+      }
+    },
+    {
+      "name": "step2_2",
+      "step_type": "optimization",
+      "data_sources": ["historical"],
+      "knowns": {
+        "Ksoil_0": {"source": "global"},
+        "Kresp_0": {"source": "step", "step": "step2_1"}
+      },
+      "unknowns": {
+        "Ktfp_tas1": {"range": [-0.4, 0.001, 0.4]}
+      }
+    }
+  ]
 }
 ```
 
-This ensures each simulation uses exactly the correct parameters for its specific region/model/step combination.
+### Unified Optimization Architecture
 
-### Parameter Management
-
-The system uses explicit parameter dictionaries for clarity:
-
-- **`knowns_dict`**: Dictionary of fixed parameters with their values
-- **`unknowns_dict`**: Dictionary of optimized parameters with format `[lower_bound, initial_guess, upper_bound]`
+- **Single Method**: `optimize_parameters()` handles both single and multiple datasets
+- **Flexible Parameter Management**: Complete parameter sets (known + optimized) passed between steps  
+- **Fail-Fast Validation**: Missing parameters or configurations cause immediate failure
+- **Consistent Interface**: Same optimization method for all step types
 
 ## Usage
 
 ### Command Line Interface
 
 ```bash
-# Run analysis for a single region/model
-python main.py --regions "Brazil" --models "ACCESS-ESM1-5" --Ksoil_0 0.025 --alpha 0.5
+# Run with default workflow
+python main.py --alpha=0.5 --Ksoil_0=0.025 --regions "Zimbabwe" --models "ACCESS-ESM1-5"
 
-# Run analysis for multiple regions
-python main.py --regions "Brazil" "China" --models "ACCESS-ESM1-5" --Ksoil_0 0.025 --alpha 0.5
+# Run with custom workflow
+python main.py --alpha=0.5 --Ksoil_0=0.025 --regions "Brazil,China" --models "ACCESS-ESM1-5" --json custom_workflow.json
 
-# List available data
-python main.py --list-data
+# Run multiple regions and models
+python main.py --alpha=0.7 --Ksoil_0=0.05 --regions "Brazil,China,Zimbabwe" --models "ACCESS-ESM1-5"
 ```
 
 ### Required Parameters
 
-- `--Ksoil_0`: Soil respiration parameter (inverse time constant for heterotrophic respiration)
-- `--alpha`: Production function exponent
-- `--regions`: List of regions to analyze
-- `--models`: List of climate models to analyze
+- `--alpha`: Production function exponent (required)
+- `--Ksoil_0`: Soil respiration parameter - inverse time constant for heterotrophic respiration (required)
+- `--regions`: Comma-separated list of regions to analyze (required)
+- `--models`: Comma-separated list of climate models to analyze (required)
+- `--json`: JSON workflow configuration file (optional, default: workflow_schema_example.json)
 
 ## Output
 
@@ -114,37 +134,61 @@ The complete parameter universe includes:
   Ktfp_co2_max = (co2_0 + Ktfp_co2_half) / co2_0
   ```
 
-## Current Status: PRODUCTION READY ✅
+## Current Status: JSON-Driven Flexible System ✅
 
-The system is **fully functional** and ready for production use. All major features have been implemented and tested:
+The system now features a **fully flexible JSON-driven workflow architecture**:
 
-### Recent Improvements
+### Major Enhancements - JSON Workflow System
 
-- **Chart visualization**: Y-axis bounds ensure 0 is always visible with appropriate padding
-- **Parameter display**: Parameter boxes positioned in lower left corner for better visibility
-- **Code organization**: All imports properly organized at top of files
-- **Enhanced debugging**: Detailed optimization progress and parameter tracking
-- **Improved parameter bounds**: Expanded ranges for climate sensitivity parameters
-- **Physical constraint implementation**: `Ktfp_co2_max` calculated from physical principles
-- **Consistent parameter format**: Standardized `[lower_bound, initial_guess, upper_bound]` format
-- **Element-wise maximum**: Ensures `Ktfp` never goes negative using `np.maximum`
+- **✅ JSON Configuration**: Complete workflow definition via JSON files
+- **✅ Flexible Step Execution**: Dynamic optimization sequences based on JSON config
+- **✅ Unified Optimization**: Single `optimize_parameters()` method handles all cases
+- **✅ Parameter Flow Management**: Automatic parameter passing between workflow steps  
+- **✅ Command Line Interface**: Full argument parsing with user-specified parameters
+- **✅ Fail-Fast Validation**: Immediate failure when configurations are incomplete
+- **✅ Multiple Workflow Support**: Easy to create custom workflows for different research questions
 
-## Clean Implementation Features
+### Architecture Benefits
 
-- **Fail Fast**: No error checking, immediate failure on issues
-- **Modular Design**: Clear separation of optimization, simulation, and output generation
-- **Parameter Transparency**: Complete parameter universe included in all outputs
-- **Consistent Data Flow**: Single parameter dictionary ensures consistency across all steps
-- **Timestamped Outputs**: Organized output structure with unique run identifiers
-- **Professional Visualization**: Publication-ready PDF books with consistent formatting
-- **Clean Code Structure**: Well-organized, maintainable codebase
+- **Complete Flexibility**: Define any optimization sequence in JSON without code changes
+- **Parameter Reuse**: Results from previous steps automatically flow to subsequent steps  
+- **Dataset Flexibility**: Use any combination of data sources per optimization step
+- **Easy Modification**: Change workflows by editing JSON files, not code
+- **Self-Documenting**: JSON workflows serve as documentation of analysis approach
+- **Validation**: Built-in configuration validation catches errors early
+
+## Key Features
+
+- **Fail Fast Philosophy**: No error checking, immediate failure on missing information
+- **Unified Architecture**: Single optimization method handles both single and multi-dataset cases
+- **Clean Parameter Management**: Simple `[lower, initial, upper]` bounds format
+- **Flexible Data Sources**: Support for any combination of datasets per step
+- **Complete Parameter Flow**: Both known and optimized parameters passed between steps
+- **Professional Output**: Timestamped directories with comprehensive results
+- **Modular Design**: Clear separation between configuration, execution, and output
 
 ## Next Steps
 
-The system is ready for:
+The flexible JSON workflow system enables:
 
-1. **Production Runs**: Execute large-scale analyses across multiple regions/models
-2. **Parameter Tuning**: Fine-tune parameter bounds based on optimization results
-3. **Performance Analysis**: Analyze optimization patterns and convergence
-4. **Physical Validation**: Validate that optimized parameters produce realistic results
-5. **Documentation**: Create user guides and example workflows 
+1. **Custom Workflows**: Create specialized JSON configurations for different research questions
+2. **Production Runs**: Execute large-scale analyses with consistent, reproducible workflows
+3. **Workflow Optimization**: Fine-tune optimization sequences based on performance analysis
+4. **Alternative Approaches**: Easily test different parameter optimization strategies
+5. **Collaborative Research**: Share and version control workflow definitions as JSON files
+6. **Integration**: Extend the system with additional step types and data sources
+
+## File Structure
+
+```
+coin_bgc/
+├── main.py                           # Main controller (JSON-driven)
+├── coin_bgc.py                      # Core model with flexible workflow execution
+├── workflow_config.py               # JSON configuration loading and validation
+├── workflow_schema_example.json     # Standard 6-step pipeline example
+├── coin_bgc_econ.py                # Original production implementation (preserved)
+├── main_econ.py                    # Original main function (preserved)
+└── data/
+    ├── input/                      # Input CSV files
+    └── output/                     # Timestamped output directories
+``` 
