@@ -207,7 +207,91 @@ The system is **fully functional** and ready for production use. All major featu
 - **Code cleanup**: Removed unused sensitivity analysis functions
 - **Import organization**: All imports properly organized at top of files
 
-## Next Steps: Production Use and Tuning
+## NEXT MAJOR ENHANCEMENT: JSON-Based Flexible Workflow System 🚧
+
+### Current Limitation Identified
+The current system has a **hardcoded optimization pipeline** with fixed steps (2.1-2.6) where:
+- Parameter assignments are hardcoded in `run_optimizations()`
+- Dataset usage is fixed per step
+- Cannot easily modify which parameters are optimized in each step
+- Cannot reorder steps or create alternative workflows
+- No configuration-driven approach
+
+### Proposed Solution: JSON Workflow Configuration ✅ **IN PROGRESS**
+Create a flexible system where optimization workflows are defined by JSON configuration files, allowing:
+
+#### ✅ **COMPLETED**:
+1. **JSON Schema Design**: Created comprehensive schema in `workflow_schema_example.json`
+2. **Configuration Classes**: Built `workflow_config.py` with:
+   - `WorkflowConfig`, `WorkflowStep`, `ParameterSpec` dataclasses
+   - `WorkflowConfigLoader` for loading/validating JSON configs
+   - `WorkflowExecutor` for resolving parameter values and bounds
+
+#### 🚧 **REMAINING TASKS**:
+3. **Flexible Step Executor**: Modify `coin_bgc.py` to execute steps based on JSON configuration
+4. **Dynamic Parameter Management**: Replace hardcoded parameter dictionaries with config-driven approach  
+5. **Updated Main Function**: Modify `run_main_analysis()` to use JSON workflow files
+6. **Example Workflows**: Create multiple workflow JSON files for different use cases
+7. **Integration Testing**: Test the complete flexible workflow system
+
+### JSON Configuration Features ✅
+- **Global Parameters**: User-input parameters (Ksoil_0, alpha)
+- **Step Types**: `calculation`, `optimization`, `multi_optimization`
+- **Parameter Sources**: `global`, `step`, `value`, `user_input`
+- **Flexible Bounds**: `absolute`, `relative`, `centered` bound specifications
+- **Data Source Mapping**: Flexible assignment of datasets to optimization steps
+- **Simulation Specs**: Final simulation configurations using optimized parameters
+
+### Example JSON Structure ✅
+```json
+{
+  "workflow_name": "COIN-BGC Standard Pipeline",
+  "steps": [
+    {
+      "name": "step2_1",
+      "type": "calculation", 
+      "data_sources": ["piControl"],
+      "calculations": {
+        "Kresp_0": "1 - npp_mean / gpp_mean",
+        "Cland_0": "npp_mean / Ksoil_0"
+      }
+    },
+    {
+      "name": "step2_2",
+      "type": "optimization",
+      "data_sources": ["historical"],
+      "knowns": {
+        "Ksoil_0": {"source": "global"},
+        "Kresp_0": {"source": "step", "step": "step2_1"}
+      },
+      "unknowns": {
+        "Ktfp_tas1": {"bounds": "absolute", "range": [-0.4, 0.001, 0.4]}
+      }
+    }
+  ]
+}
+```
+
+### Benefits of JSON Workflow System
+- **Complete Flexibility**: Define any optimization sequence
+- **Parameter Reuse**: Reference results from previous steps
+- **Dataset Flexibility**: Use any combination of data sources
+- **Multiple Workflows**: Create different JSON files for different research questions
+- **Easy Modification**: Change workflows without touching core code
+- **Validation**: Built-in configuration validation
+- **Documentation**: Self-documenting workflow specifications
+
+### Files Created ✅
+- `workflow_schema_example.json`: Complete example of the standard 6-step pipeline
+- `workflow_config.py`: Configuration loading and execution framework
+
+### Next Session Goals
+1. Complete the flexible step executor in `coin_bgc.py`
+2. Update `run_main_analysis()` to use JSON workflows  
+3. Create additional example workflow configurations
+4. Test the complete flexible system
+
+## Previous Next Steps: Production Use and Tuning
 
 The system is ready for:
 

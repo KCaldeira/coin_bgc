@@ -12,7 +12,7 @@ import pandas as pd
 import traceback
 from typing import List
 
-from coin_bgc import run_main_analysis, load_data_for_analysis, load_co2_data, get_run_output_directory
+from coin_bgc_econ import run_main_analysis, load_data_for_analysis, load_co2_data, get_run_output_directory
 
 
 def parse_arguments():

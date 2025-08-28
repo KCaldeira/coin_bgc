@@ -1,0 +1,162 @@
+{
+  "workflow_name": "COIN-BGC Standard Pipeline",
+  "description": "Standard 6-step optimization pipeline for COIN-BGC",
+  "global_parameters": {
+    "Ksoil_0": {"source": "user_input", "description": "Soil respiration parameter"},
+    "alpha": {"source": "user_input", "description": "Production function exponent"}
+  },
+  "steps": [
+    {
+      "name": "step2_1",
+      "description": "Calculate initial parameters from piControl data",
+      "type": "calculation",
+      "data_sources": ["piControl"],
+      "co2_data": false,
+      "calculations": {
+        "Kresp_0": "1 - npp_mean / gpp_mean",
+        "Cland_0": "npp_mean / Ksoil_0",
+        "Ktfp_0": "gpp_mean / (Cland_0 ** alpha)",
+        "Ktfp_tas0": "tas_mean",
+        "Ktfp_pr0": "pr_mean"
+      }
+    },
+    {
+      "name": "step2_2", 
+      "description": "Optimize climate sensitivity parameters using historical data",
+      "type": "optimization",
+      "data_sources": ["historical"],
+      "co2_data": true,
+      "knowns": {
+        "Ksoil_0": {"source": "global"},
+        "alpha": {"source": "global"},
+        "Kresp_0": {"source": "step", "step": "step2_1"},
+        "Cland_0": {"source": "step", "step": "step2_1"},
+        "Ktfp_tas0": {"source": "step", "step": "step2_1"},
+        "Ktfp_pr0": {"source": "step", "step": "step2_1"},
+        "Ktfp_co2_half": {"source": "value", "value": 0.0}
+      },
+      "unknowns": {
+        "Ktfp_0": {"bounds": "relative", "factor": [0.5, 1.0, 2.0], "source": "step", "step": "step2_1"},
+        "Ktfp_tas1": {"bounds": "absolute", "range": [-0.4, 0.001, 0.4]},
+        "Ktfp_tas2": {"bounds": "absolute", "range": [-0.4, 0.001, 0.4]},
+        "Ktfp_pr1": {"bounds": "absolute", "range": [-0.4, 0.001, 0.4]},
+        "Ktfp_pr2": {"bounds": "absolute", "range": [-0.4, 0.001, 0.4]}
+      }
+    },
+    {
+      "name": "step2_3",
+      "description": "Optimize CO2 parameters using bgc_data",
+      "type": "optimization",
+      "data_sources": ["bgc"],
+      "co2_data": true,
+      "knowns": {
+        "Ksoil_0": {"source": "global"},
+        "alpha": {"source": "global"},
+        "Kresp_0": {"source": "step", "step": "step2_2"},
+        "Cland_0": {"source": "step", "step": "step2_2"},
+        "Ktfp_0": {"source": "step", "step": "step2_2"},
+        "Ktfp_tas0": {"source": "step", "step": "step2_2"},
+        "Ktfp_tas1": {"source": "step", "step": "step2_2"},
+        "Ktfp_tas2": {"source": "step", "step": "step2_2"},
+        "Ktfp_pr0": {"source": "step", "step": "step2_2"},
+        "Ktfp_pr1": {"source": "step", "step": "step2_2"},
+        "Ktfp_pr2": {"source": "step", "step": "step2_2"}
+      },
+      "unknowns": {
+        "Ktfp_co2_half": {"bounds": "absolute", "range": [10.0, 1000.0, 10000.0]}
+      }
+    },
+    {
+      "name": "step2_4",
+      "description": "Optimize all parameters using bgc_data and piControl_data",
+      "type": "multi_optimization", 
+      "data_sources": ["bgc", "piControl"],
+      "co2_data": [true, false],
+      "knowns": {
+        "Ksoil_0": {"source": "global"},
+        "alpha": {"source": "global"},
+        "Kresp_0": {"source": "step", "step": "step2_3"},
+        "Cland_0": {"source": "step", "step": "step2_3"},
+        "Ktfp_tas0": {"source": "step", "step": "step2_3"},
+        "Ktfp_pr0": {"source": "step", "step": "step2_3"}
+      },
+      "unknowns": {
+        "Ktfp_0": {"bounds": "relative", "factor": [0.5, 1.0, 2.0], "source": "step", "step": "step2_3"},
+        "Ktfp_tas1": {"bounds": "centered", "center_source": "step", "center_step": "step2_3", "range": [-0.4, 0.4]},
+        "Ktfp_tas2": {"bounds": "centered", "center_source": "step", "center_step": "step2_3", "range": [-0.4, 0.4]},
+        "Ktfp_pr1": {"bounds": "centered", "center_source": "step", "center_step": "step2_3", "range": [-0.4, 0.4]},
+        "Ktfp_pr2": {"bounds": "centered", "center_source": "step", "center_step": "step2_3", "range": [-0.4, 0.4]},
+        "Ktfp_co2_half": {"bounds": "centered", "center_source": "step", "center_step": "step2_3", "range": [10.0, 10000.0]}
+      }
+    },
+    {
+      "name": "step2_5",
+      "description": "Final optimization of climate sensitivity parameters using all data",
+      "type": "multi_optimization",
+      "data_sources": ["piControl", "bgc", "full"],
+      "co2_data": [false, true, true],
+      "knowns": {
+        "Ksoil_0": {"source": "global"},
+        "alpha": {"source": "global"},
+        "Kresp_0": {"source": "step", "step": "step2_4"},
+        "Cland_0": {"source": "step", "step": "step2_4"},
+        "Ktfp_0": {"source": "step", "step": "step2_4"},
+        "Ktfp_tas0": {"source": "step", "step": "step2_4"},
+        "Ktfp_pr0": {"source": "step", "step": "step2_4"},
+        "Ktfp_co2_half": {"source": "step", "step": "step2_4"}
+      },
+      "unknowns": {
+        "Ktfp_tas1": {"bounds": "centered", "center_source": "step", "center_step": "step2_4", "range": [-0.4, 0.4]},
+        "Ktfp_tas2": {"bounds": "centered", "center_source": "step", "center_step": "step2_4", "range": [-0.4, 0.4]},
+        "Ktfp_pr1": {"bounds": "centered", "center_source": "step", "center_step": "step2_4", "range": [-0.4, 0.4]},
+        "Ktfp_pr2": {"bounds": "centered", "center_source": "step", "center_step": "step2_4", "range": [-0.4, 0.4]}
+      }
+    },
+    {
+      "name": "step2_6",
+      "description": "Complete optimization using all datasets",
+      "type": "multi_optimization",
+      "data_sources": ["piControl", "bgc", "full"],
+      "co2_data": [false, true, true],
+      "knowns": {
+        "Ksoil_0": {"source": "global"},
+        "alpha": {"source": "global"},
+        "Kresp_0": {"source": "step", "step": "step2_5"},
+        "Cland_0": {"source": "step", "step": "step2_5"},
+        "Ktfp_tas0": {"source": "step", "step": "step2_5"},
+        "Ktfp_pr0": {"source": "step", "step": "step2_5"}
+      },
+      "unknowns": {
+        "Ktfp_0": {"bounds": "relative", "factor": [0.5, 1.0, 2.0], "source": "step", "step": "step2_5"},
+        "Ktfp_tas1": {"bounds": "centered", "center_source": "step", "center_step": "step2_5", "range": [-0.4, 0.4]},
+        "Ktfp_tas2": {"bounds": "centered", "center_source": "step", "center_step": "step2_5", "range": [-0.4, 0.4]},
+        "Ktfp_pr1": {"bounds": "centered", "center_source": "step", "center_step": "step2_5", "range": [-0.4, 0.4]},
+        "Ktfp_pr2": {"bounds": "centered", "center_source": "step", "center_step": "step2_5", "range": [-0.4, 0.4]},
+        "Ktfp_co2_half": {"bounds": "centered", "center_source": "step", "center_step": "step2_5", "range": [10.0, 10000.0]}
+      }
+    }
+  ],
+  "simulations": [
+    {
+      "name": "piControl",
+      "description": "piControl simulation using final parameters",
+      "data_source": "piControl",
+      "co2_data": false,
+      "parameters_source": "step2_6"
+    },
+    {
+      "name": "bgc", 
+      "description": "BGC simulation using final parameters",
+      "data_source": "bgc",
+      "co2_data": true,
+      "parameters_source": "step2_6"
+    },
+    {
+      "name": "full",
+      "description": "Full simulation using final parameters", 
+      "data_source": "full",
+      "co2_data": true,
+      "parameters_source": "step2_6"
+    }
+  ]
+}
