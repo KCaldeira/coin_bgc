@@ -31,7 +31,7 @@ from coin_bgc import CoinBGC
 class CoinBGCController:
     """Main controller for JSON-driven COIN-BGC workflow execution."""
     
-    def __init__(self, workflow_file: str, alpha: float, Ksoil_0: float, regions: list, models: list):
+    def __init__(self, workflow_file: str, alpha: float, Ksoil_0: float, regions: list, models: list, verbose: bool = False):
         """
         Initialize the controller with a workflow configuration file and parameters.
         
@@ -41,12 +41,14 @@ class CoinBGCController:
             Ksoil_0: Inverse time constant for soil respiration  
             regions: List of regions to process
             models: List of models to process
+            verbose: Enable verbose output with detailed parameter tracking
         """
         self.workflow_file = workflow_file
         self.alpha = alpha
         self.Ksoil_0 = Ksoil_0
         self.regions = regions
         self.models = models
+        self.verbose = verbose
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.output_dir = f"data/output/run_{self.timestamp}"
         
@@ -226,15 +228,61 @@ class CoinBGCController:
             
             # Execute the workflow step using the new flexible method
             global_params = {'alpha': self.alpha, 'Ksoil_0': self.Ksoil_0}
+            
+            if self.verbose:
+                self._print_parameter_universe_before_step(step, step_results, global_params)
+            
             step_result = self.coin_bgc.execute_workflow_step(
-                step, region, model, self.datasets, step_results, global_params
+                step, region, model, self.datasets, step_results, global_params, self.verbose
             )
             step_results[step.name] = step_result
+            
+            if self.verbose:
+                self._print_parameter_universe_after_step(step, step_result)
         
         # Store results for this region/model
         if region not in self.results:
             self.results[region] = {}
         self.results[region][model] = step_results
+    
+    def _print_parameter_universe_before_step(self, step, step_results, global_params):
+        """Print the complete parameter universe before executing a step."""
+        print(f"        📊 PARAMETER UNIVERSE BEFORE {step.name.upper()}:")
+        
+        # Global parameters (user-specified)
+        print(f"        🌍 Global Parameters (user-specified):")
+        for param_name, value in global_params.items():
+            print(f"          {param_name}: {value:.6f}")
+        
+        # Parameters from previous steps
+        if step_results:
+            print(f"        📈 Results from Previous Steps:")
+            for step_name, results in step_results.items():
+                print(f"          From {step_name}:")
+                for param_name, value in results.items():
+                    print(f"            {param_name}: {value:.6f}")
+        
+        # Parameters that will be known for this step
+        print(f"        🔒 Known Parameters for {step.name}:")
+        for param_name, param_spec in step.knowns.items():
+            print(f"          {param_name}: source={param_spec.source}")
+        
+        # Parameters that will be optimized
+        if hasattr(step, 'unknowns') and step.unknowns:
+            print(f"        🎯 Parameters to Optimize in {step.name}:")
+            for param_name, param_spec in step.unknowns.items():
+                bounds = getattr(param_spec, 'range', 'unknown')
+                print(f"          {param_name}: bounds={bounds}")
+        
+        print()
+    
+    def _print_parameter_universe_after_step(self, step, step_result):
+        """Print the complete parameter universe after executing a step."""
+        print(f"        📊 PARAMETER UNIVERSE AFTER {step.name.upper()}:")
+        print(f"        ✅ Results from {step.name}:")
+        for param_name, value in step_result.items():
+            print(f"          {param_name}: {value:.6f}")
+        print()
     
     def _run_final_simulations(self):
         """Run final simulations using optimized parameters."""
@@ -307,6 +355,12 @@ Examples:
         help='Models to process (comma-separated or single model)'
     )
     
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Enable verbose output showing detailed parameter tracking'
+    )
+    
     args = parser.parse_args()
     
     # Validate workflow file exists
@@ -319,7 +373,7 @@ Examples:
     models = [m.strip() for m in args.models.split(',')]
     
     # Create and run the controller
-    controller = CoinBGCController(args.json, args.alpha, args.Ksoil_0, regions, models)
+    controller = CoinBGCController(args.json, args.alpha, args.Ksoil_0, regions, models, args.verbose)
     controller.run()
 
 

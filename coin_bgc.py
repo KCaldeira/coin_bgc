@@ -733,8 +733,11 @@ class CoinBGC:
         Returns:
             Dictionary of optimal values for unknown parameters
         """
+        print(f"  🔧 Optimize_parameters called with {len(data_dfs)} datasets, {len(unknowns)} unknowns")
+        
         # Set parameter sets for this optimization
         self.set_parameter_sets(list(knowns.keys()), list(unknowns.keys()))
+        print(f"  🔧 Parameter sets configured: {len(self.knowns)} knowns, {len(self.unknowns)} unknowns")
         
         # Reset function evaluation counter and set max
         self._function_eval_count = 0
@@ -805,9 +808,9 @@ class CoinBGC:
         year_diff = abs(co2_df['year'] - year)
         closest_idx = year_diff.idxmin()
         
-        return co2_df.loc[closest_idx, 'co2']
+        return co2_df.loc[closest_idx, 'pco2 (ppm)']
 
-    def execute_workflow_step(self, step, region: str, model: str, datasets: Dict, previous_results: Dict, global_params: Dict = None) -> Dict:
+    def execute_workflow_step(self, step, region: str, model: str, datasets: Dict, previous_results: Dict, global_params: Dict = None, verbose: bool = False) -> Dict:
         """
         Execute a single workflow step based on JSON configuration.
         
@@ -835,7 +838,7 @@ class CoinBGC:
         if step.step_type == "calculation":
             return self._execute_calculation_step(step, step_datasets, previous_results, global_params)
         elif step.step_type == "optimization":
-            return self._execute_optimization_step(step, step_datasets, previous_results, region, model, global_params)
+            return self._execute_optimization_step(step, step_datasets, previous_results, region, model, global_params, datasets, verbose)
         else:
             raise ValueError(f"Unknown step type: {step.step_type}")
     
@@ -911,7 +914,7 @@ class CoinBGC:
         
         return results
     
-    def _execute_optimization_step(self, step, datasets: Dict, previous_results: Dict, region: str, model: str, global_params: Dict) -> Dict:
+    def _execute_optimization_step(self, step, datasets: Dict, previous_results: Dict, region: str, model: str, global_params: Dict, original_datasets: Dict, verbose: bool = False) -> Dict:
         """Execute a single-dataset optimization step."""
         from workflow_config import WorkflowExecutor
         
@@ -939,11 +942,10 @@ class CoinBGC:
         
         # Get all datasets for optimization (handles both single and multiple datasets)
         optimization_datasets = []
-        co2_data = datasets.get('co2_data', None)
         
         for source in step.data_sources:
-            if source in datasets and source != 'co2_data':
-                df = datasets[source]
+            if source in datasets:
+                df = datasets[source]  # datasets are already filtered by region/model
                 if not df.empty:
                     optimization_datasets.append(df)
         
@@ -951,10 +953,40 @@ class CoinBGC:
             print(f"          ⚠️  No datasets available for optimization")
             return {}
         
-        # Prepare CO2 data list (same CO2 data for all datasets or None)
-        co2_dfs = [co2_data] * len(optimization_datasets) if co2_data is not None else None
+        # Prepare CO2 data by interpolating global CO2 data for each dataset's years
+        # The CO2 file now includes (0, 284.317) and (1849.9999, 284.317) for piControl years
+        global_co2_data = original_datasets.get('co2_data', None)
+        co2_dfs = []
+        
+        if global_co2_data is not None:
+            for df in optimization_datasets:
+                if 'year' in df.columns:
+                    # Create interpolated CO2 data for this dataset's years
+                    years = df['year'].unique()
+                    co2_values = []
+                    for year in years:
+                        co2_val = self._get_co2_for_year(global_co2_data, year)
+                        co2_values.append(co2_val)
+                    
+                    # Create CO2 DataFrame for this dataset
+                    co2_df_for_dataset = pd.DataFrame({
+                        'year': years,
+                        'pco2 (ppm)': co2_values
+                    })
+                    co2_dfs.append(co2_df_for_dataset)
+                else:
+                    print(f"          ⚠️  Dataset missing 'year' column, using global CO2 data")
+                    co2_dfs.append(global_co2_data)
+        else:
+            co2_dfs = None
+        
+        # Debug CO2 data preparation (only in verbose mode)
+        if verbose:
+            print(f"          🔍 Global CO2 data: {global_co2_data.shape if global_co2_data is not None else 'None'}")
+            print(f"          🔍 CO2 dfs prepared: {len(co2_dfs) if co2_dfs else 'None'} datasets")
         
         # Run optimization using unified method
+        print(f"          🚀 Starting optimization with {len(optimization_datasets)} datasets, {len(unknowns)} parameters to optimize...")
         try:
             optimized_params = self.optimize_parameters(knowns, unknowns, optimization_datasets, co2_dfs)
             dataset_desc = "dataset" if len(optimization_datasets) == 1 else f"{len(optimization_datasets)} datasets"
