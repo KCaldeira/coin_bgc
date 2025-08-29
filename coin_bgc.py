@@ -810,7 +810,7 @@ class CoinBGC:
         
         return co2_df.loc[closest_idx, 'pco2 (ppm)']
 
-    def execute_workflow_step(self, step, region: str, model: str, datasets: Dict, previous_results: Dict, global_params: Dict = None, verbose: bool = False) -> Dict:
+    def execute_workflow_step(self, step, region: str, model: str, datasets: Dict, previous_results: Dict, global_params: Dict = None, bounds: Dict = None, verbose: bool = False) -> Dict:
         """
         Execute a single workflow step based on JSON configuration.
         
@@ -838,7 +838,7 @@ class CoinBGC:
         if step.step_type == "calculation":
             return self._execute_calculation_step(step, step_datasets, previous_results, global_params)
         elif step.step_type == "optimization":
-            return self._execute_optimization_step(step, step_datasets, previous_results, region, model, global_params, datasets, verbose)
+            return self._execute_optimization_step(step, step_datasets, previous_results, region, model, global_params, datasets, bounds, verbose)
         else:
             raise ValueError(f"Unknown step type: {step.step_type}")
     
@@ -914,7 +914,7 @@ class CoinBGC:
         
         return results
     
-    def _execute_optimization_step(self, step, datasets: Dict, previous_results: Dict, region: str, model: str, global_params: Dict, original_datasets: Dict, verbose: bool = False) -> Dict:
+    def _execute_optimization_step(self, step, datasets: Dict, previous_results: Dict, region: str, model: str, global_params: Dict, original_datasets: Dict, bounds: Dict = None, verbose: bool = False) -> Dict:
         """Execute a single-dataset optimization step."""
         from workflow_config import WorkflowExecutor
         
@@ -931,14 +931,23 @@ class CoinBGC:
         
         # Add unknown parameters (to be optimized)
         for param_name, param_spec in step.unknowns.items():
-            if hasattr(param_spec, 'range') and param_spec.range is not None:
-                range_spec = param_spec.range
-                if len(range_spec) != 3:
-                    raise ValueError(f"Parameter {param_name} range must have exactly 3 values [lower, initial, upper], got: {range_spec}")
-                unknowns[param_name] = range_spec
-                params[param_name] = range_spec[1]  # Use initial guess (middle value)
+            # Get starting value from parameter spec
+            if param_spec.source == "value":
+                initial_value = param_spec.value
             else:
-                raise ValueError(f"Parameter {param_name} in step {step.name} missing or None 'range' specification. param_spec: {param_spec}")
+                initial_value = self._resolve_parameter_value(param_spec, previous_results, global_params)
+                
+            # Get bounds from centralized bounds dictionary
+            if bounds and param_name in bounds:
+                bounds_spec = bounds[param_name]
+                if len(bounds_spec) != 2:
+                    raise ValueError(f"Parameter {param_name} bounds must have exactly 2 values [lower, upper], got: {bounds_spec}")
+                # Convert to old format: [lower, initial, upper]
+                range_spec = [bounds_spec[0], initial_value, bounds_spec[1]]
+                unknowns[param_name] = range_spec
+                params[param_name] = initial_value
+            else:
+                raise ValueError(f"Parameter {param_name} in step {step.name} not found in bounds dictionary or bounds not provided")
         
         # Get all datasets for optimization (handles both single and multiple datasets)
         optimization_datasets = []

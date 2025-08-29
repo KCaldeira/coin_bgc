@@ -206,6 +206,40 @@ The system is **fully functional** and ready for production use. All major featu
 - **Parameter display**: Parameter boxes positioned in lower left corner for better visibility
 - **Code cleanup**: Removed unused sensitivity analysis functions
 - **Import organization**: All imports properly organized at top of files
+- **Centralized bounds**: Simplified JSON structure with single bounds dictionary (August 2025)
+
+## LATEST IMPROVEMENT: Centralized Bounds Architecture ✅ (August 2025)
+
+### Problem Solved
+The original JSON structure had repetitive hardcoded bounds on each optimization step, making maintenance difficult and prone to inconsistencies.
+
+### Solution Implemented ✅
+**Centralized Bounds Dictionary**: Created a single `bounds` section in the JSON configuration that defines [low, high] ranges for all optimization parameters once.
+
+#### Key Changes:
+1. **Single Bounds Definition**: All parameter bounds defined once at the top level
+2. **Simplified Step Structure**: Replaced complex knowns/unknowns dictionaries with:
+   - `parameters`: Dictionary containing all parameter values/sources
+   - `knowns`: Simple list of parameter names to hold fixed  
+   - `unknowns`: Simple list of parameter names to optimize
+3. **Starting Values**: Initial optimization values specified directly in the parameters dictionary
+4. **Parser Updates**: Modified workflow configuration parser to handle new structure and use centralized bounds
+
+#### Benefits Realized:
+- **DRY Principle**: Bounds defined once, used consistently across all steps
+- **Easier Maintenance**: Change bounds in one place affects all optimization steps
+- **Cleaner JSON**: Much simpler and more readable workflow definitions
+- **Less Error-Prone**: No risk of inconsistent bounds between steps
+- **Better Separation**: Clear distinction between bounds (constraints) and starting values (initialization)
+
+#### Files Updated:
+- `workflow_schema_example.json`: Converted to new centralized bounds format
+- `workflow_config.py`: Updated parser to handle new structure
+- `coin_bgc.py`: Modified optimization step execution to use centralized bounds
+- `main.py`: Updated to pass bounds through call chain
+
+### Status: ✅ COMPLETED AND TESTED
+The centralized bounds system is fully operational and has been tested successfully with the standard 6-step optimization pipeline.
 
 ## MAJOR ENHANCEMENT COMPLETED: JSON-Based Flexible Workflow System ✅
 
@@ -248,18 +282,26 @@ Created a fully flexible system where optimization workflows are defined by JSON
 - **Global Parameters**: User-input parameters (Ksoil_0, alpha)
 - **Step Types**: `calculation`, `optimization` (unified - handles both single and multi-dataset)
 - **Parameter Sources**: `global`, `step`, `value` - automatic parameter flow between steps
-- **Simple Bounds**: `[lower, initial, upper]` format for all optimization parameters
+- **Centralized Bounds**: Single `bounds` dictionary with `[low, high]` ranges, starting values specified per step
 - **Data Source Mapping**: Flexible assignment of any datasets to optimization steps
 - **Complete Validation**: Built-in validation catches configuration errors early
 
-### Example JSON Structure ✅
+### Example JSON Structure ✅ - UPDATED: Centralized Bounds
 ```json
 {
   "workflow_name": "COIN-BGC Standard Pipeline",
+  "bounds": {
+    "Ktfp_0": [0.01, 1.0],
+    "Ktfp_tas1": [-0.4, 0.4],
+    "Ktfp_tas2": [-0.4, 0.4],
+    "Ktfp_pr1": [-0.4, 0.4],
+    "Ktfp_pr2": [-0.4, 0.4],
+    "Ktfp_co2_half": [10.0, 10000.0]
+  },
   "steps": [
     {
       "name": "step2_1",
-      "type": "calculation", 
+      "step_type": "calculation", 
       "data_sources": ["piControl"],
       "calculations": {
         "Kresp_0": "1 - npp_mean / gpp_mean",
@@ -268,15 +310,15 @@ Created a fully flexible system where optimization workflows are defined by JSON
     },
     {
       "name": "step2_2",
-      "type": "optimization",
+      "step_type": "optimization",
       "data_sources": ["historical"],
-      "knowns": {
+      "parameters": {
         "Ksoil_0": {"source": "global"},
-        "Kresp_0": {"source": "step", "step": "step2_1"}
+        "Kresp_0": {"source": "step", "step": "step2_1"},
+        "Ktfp_tas1": 0.001
       },
-      "unknowns": {
-        "Ktfp_tas1": {"bounds": "absolute", "range": [-0.4, 0.001, 0.4]}
-      }
+      "knowns": ["Ksoil_0", "Kresp_0"],
+      "unknowns": ["Ktfp_tas1"]
     }
   ]
 }

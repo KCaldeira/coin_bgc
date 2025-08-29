@@ -22,7 +22,8 @@ The system uses JSON configuration files to define flexible optimization workflo
 - **Step Types**: `calculation`, `optimization` (handles both single and multi-dataset optimizations)
 - **Parameter Sources**: `global` (user input), `step` (from previous step), `value` (direct value)
 - **Data Sources**: Flexible assignment of datasets to optimization steps
-- **Parameter Bounds**: Simple `[lower, initial, upper]` format for all optimization parameters
+- **Centralized Bounds**: Single `bounds` dictionary defines [low, high] ranges for all optimization parameters
+- **Simplified Structure**: Parameters, knowns, and unknowns use clean, consistent format
 
 ### Example JSON Configuration
 
@@ -32,6 +33,14 @@ The system uses JSON configuration files to define flexible optimization workflo
   "global_parameters": {
     "Ksoil_0": {"source": "user_input"},
     "alpha": {"source": "user_input"}
+  },
+  "bounds": {
+    "Ktfp_0": [0.01, 1.0],
+    "Ktfp_tas1": [-0.4, 0.4],
+    "Ktfp_tas2": [-0.4, 0.4],
+    "Ktfp_pr1": [-0.4, 0.4],
+    "Ktfp_pr2": [-0.4, 0.4],
+    "Ktfp_co2_half": [10.0, 10000.0]
   },
   "steps": [
     {
@@ -47,13 +56,13 @@ The system uses JSON configuration files to define flexible optimization workflo
       "name": "step2_2",
       "step_type": "optimization",
       "data_sources": ["historical"],
-      "knowns": {
+      "parameters": {
         "Ksoil_0": {"source": "global"},
-        "Kresp_0": {"source": "step", "step": "step2_1"}
+        "Kresp_0": {"source": "step", "step": "step2_1"},
+        "Ktfp_tas1": 0.001
       },
-      "unknowns": {
-        "Ktfp_tas1": {"range": [-0.4, 0.001, 0.4]}
-      }
+      "knowns": ["Ksoil_0", "Kresp_0"],
+      "unknowns": ["Ktfp_tas1"]
     }
   ]
 }
@@ -161,7 +170,7 @@ The system now features a **fully flexible JSON-driven workflow architecture**:
 
 - **Fail Fast Philosophy**: No error checking, immediate failure on missing information
 - **Unified Architecture**: Single optimization method handles both single and multi-dataset cases
-- **Clean Parameter Management**: Simple `[lower, initial, upper]` bounds format
+- **Centralized Bounds Management**: Single bounds dictionary with `[low, high]` ranges, starting values specified per step
 - **Flexible Data Sources**: Support for any combination of datasets per step
 - **Complete Parameter Flow**: Both known and optimized parameters passed between steps
 - **Professional Output**: Timestamped directories with comprehensive results

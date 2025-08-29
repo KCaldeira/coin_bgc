@@ -20,6 +20,7 @@ import sys
 import argparse
 from datetime import datetime
 from pathlib import Path
+import time
 
 # Import our configuration system
 from workflow_config import WorkflowConfigLoader, WorkflowExecutor
@@ -52,6 +53,9 @@ class CoinBGCController:
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.output_dir = f"data/output/run_{self.timestamp}"
         
+        # Extract schema suffix from workflow filename (e.g., "example" from "workflow_schema_example.json")
+        self.schema_suffix = self._extract_schema_suffix(workflow_file)
+        
         # Initialize components
         self.config_loader = WorkflowConfigLoader()
         self.workflow_config = None
@@ -62,8 +66,18 @@ class CoinBGCController:
         self.datasets = {}
         self.results = {}
         
+        # Timing tracking
+        self.timing_data = {
+            'total_start_time': None,
+            'step_times': {},
+            'region_model_times': {},
+            'substep_times': {}  # 2D structure: [region_model][substep] = duration
+        }
+        
     def run(self):
         """Execute the complete three-step workflow."""
+        self.timing_data['total_start_time'] = time.time()
+        
         print(f"=== COIN-BGC Flexible Workflow System ===")
         print(f"Workflow file: {self.workflow_file}")
         print(f"Output directory: {self.output_dir}")
@@ -72,13 +86,22 @@ class CoinBGCController:
         
         try:
             # Step 1: Read in data, JSON files, etc.
+            step1_start = time.time()
             self.step1_load_data_and_config()
+            self.timing_data['step_times']['step1_load_data'] = time.time() - step1_start
             
             # Step 2: Perform processing steps
+            step2_start = time.time()
             self.step2_execute_workflow()
+            self.timing_data['step_times']['step2_execute_workflow'] = time.time() - step2_start
             
             # Step 3: Perform final simulations and produce output
+            step3_start = time.time()
             self.step3_generate_final_output()
+            self.timing_data['step_times']['step3_generate_output'] = time.time() - step3_start
+            
+            # Generate timing report
+            self._generate_timing_report()
             
             print(f"✅ Workflow completed successfully!")
             print(f"📁 Results saved to: {self.output_dir}")
@@ -118,6 +141,18 @@ class CoinBGCController:
         # Load all required datasets
         self._load_datasets()
         
+        # If regions or models are None, extract all available from datasets
+        if self.regions is None or self.models is None:
+            all_regions, all_models = self._get_regions_and_models()
+            
+            if self.regions is None:
+                self.regions = all_regions
+                print(f"  🌍 Using all available regions: {', '.join(self.regions)}")
+                
+            if self.models is None:
+                self.models = all_models
+                print(f"  🎯 Using all available models: {', '.join(self.models)}")
+        
         print("  ✅ Step 1 completed: Data and configuration loaded")
         print()
     
@@ -145,8 +180,13 @@ class CoinBGCController:
         # Execute workflow for each region/model combination
         for region in regions:
             for model in models:
+                region_model_start = time.time()
                 print(f"    🎯 Processing: {region} - {model}")
                 self._execute_region_model_workflow(region, model)
+                
+                # Record timing for this region/model combination
+                region_model_key = f"{region}_{model}"
+                self.timing_data['region_model_times'][region_model_key] = time.time() - region_model_start
         
         print("  ✅ Step 2 completed: All workflow steps executed")
         print()
@@ -156,22 +196,21 @@ class CoinBGCController:
         Step 3: Perform final simulations and produce output.
         
         This step:
-        - Runs final simulations using optimized parameters
+        - Runs final simulations using optimized parameters for each workflow step
         - Generates CSV output files for all datasets and steps
-        - Creates PDF visualization books
-        - Saves final parameter files
+        - Creates PDF visualization books with data-driven chart logic
+        - Saves parameter files for each substep
         - Produces summary reports
         """
         print("🔄 Step 3: Generating final output...")
         
-        # Run final simulations if specified in workflow
-        if hasattr(self.workflow_config, 'final_simulations'):
-            self._run_final_simulations()
+        # Always run final simulations for each workflow step
+        self._run_final_simulations()
         
-        # Generate comprehensive output files
+        # Generate comprehensive output files (Step 3.1)
         self._save_all_results()
         
-        # Generate PDF visualization books
+        # Generate PDF visualization books (Step 3.2)
         self._generate_pdf_books()
         
         print("  ✅ Step 3 completed: Final output generated")
@@ -181,24 +220,56 @@ class CoinBGCController:
         """Load all required CSV datasets."""
         print("  📊 Loading datasets...")
         
-        # Define standard dataset paths
+        # Define standard dataset paths based on workflow_schema_example.json usage
         data_paths = {
             'piControl': 'data/input/Data_regression_piControl.csv',
-            'historical': 'data/input/Data_regression_historical.csv',
-            'full': 'data/input/Data_regression_ssp585.csv',
-            'bgc': 'data/input/Data_regression_ssp585-bgc.csv',
+            'historical': 'data/input/Data_regression_historical.csv', 
+            'full': 'data/input/Data_regression_ssp585.csv',  # This should combine historical + ssp585 
+            'bgc': 'data/input/Data_regression_ssp585-bgc.csv',  # This should combine hist-bgc + ssp585-bgc
             '1pctCO2': 'data/input/Data_regression_1pctCO2.csv',
             '1pctCO2_bgc': 'data/input/Data_regression_1pctCO2-bgc.csv',
             'co2_data': 'data/input/historical-ssp585_co2.csv'
         }
         
-        # Load each dataset that exists
-        for name, path in data_paths.items():
-            if os.path.exists(path):
-                print(f"    Loading {name} from {path}")
-                self.datasets[name] = self.coin_bgc.load_data(path)
+        # For 'full' and 'bgc' datasets, we need to combine historical and future data
+        # Load individual components first
+        component_paths = {
+            'historical': 'data/input/Data_regression_historical.csv',
+            'ssp585': 'data/input/Data_regression_ssp585.csv',
+            'hist_bgc': 'data/input/Data_regression_hist-bgc.csv', 
+            'ssp585_bgc': 'data/input/Data_regression_ssp585-bgc.csv'
+        }
+        
+        # Load simple datasets first
+        simple_datasets = ['piControl', 'historical', '1pctCO2', '1pctCO2_bgc', 'co2_data']
+        for name in simple_datasets:
+            if name in data_paths and os.path.exists(data_paths[name]):
+                print(f"    Loading {name} from {data_paths[name]}")
+                self.datasets[name] = self.coin_bgc.load_data(data_paths[name])
             else:
-                print(f"    ⚠️  Dataset {name} not found at {path}")
+                print(f"    ⚠️  Dataset {name} not found")
+        
+        # Create combined 'full' dataset (historical + ssp585)
+        if (os.path.exists(component_paths['historical']) and 
+            os.path.exists(component_paths['ssp585'])):
+            print(f"    Creating 'full' dataset from historical + ssp585")
+            hist_df = self.coin_bgc.load_data(component_paths['historical'])
+            ssp585_df = self.coin_bgc.load_data(component_paths['ssp585'])
+            import pandas as pd
+            self.datasets['full'] = pd.concat([hist_df, ssp585_df], ignore_index=True).sort_values('year').reset_index(drop=True)
+        else:
+            print(f"    ⚠️  Cannot create 'full' dataset - missing historical or ssp585 files")
+        
+        # Create combined 'bgc' dataset (hist-bgc + ssp585-bgc)
+        if (os.path.exists(component_paths['hist_bgc']) and 
+            os.path.exists(component_paths['ssp585_bgc'])):
+            print(f"    Creating 'bgc' dataset from hist-bgc + ssp585-bgc")
+            hist_bgc_df = self.coin_bgc.load_data(component_paths['hist_bgc'])
+            ssp585_bgc_df = self.coin_bgc.load_data(component_paths['ssp585_bgc'])
+            import pandas as pd
+            self.datasets['bgc'] = pd.concat([hist_bgc_df, ssp585_bgc_df], ignore_index=True).sort_values('year').reset_index(drop=True)
+        else:
+            print(f"    ⚠️  Cannot create 'bgc' dataset - missing hist-bgc or ssp585-bgc files")
         
         print(f"  ✅ Loaded {len(self.datasets)} datasets")
     
@@ -207,11 +278,12 @@ class CoinBGCController:
         regions = set()
         models = set()
         
-        for dataset in self.datasets.values():
-            if hasattr(dataset, 'region'):
-                regions.update(dataset['region'].unique())
-            if hasattr(dataset, 'model'):
-                models.update(dataset['model'].unique())
+        for dataset_name, dataset in self.datasets.items():
+            if dataset is not None and hasattr(dataset, 'columns'):
+                if 'region' in dataset.columns:
+                    regions.update(dataset['region'].dropna().unique())
+                if 'model' in dataset.columns:
+                    models.update(dataset['model'].dropna().unique())
         
         return sorted(regions), sorted(models)
     
@@ -223,7 +295,12 @@ class CoinBGCController:
         # For now, placeholder that shows the structure
         step_results = {}
         
+        # Initialize substep timing structure for this region/model
+        region_model_key = f"{region}_{model}"
+        self.timing_data['substep_times'][region_model_key] = {}
+        
         for step in self.workflow_config.steps:
+            substep_start = time.time()
             print(f"      🔧 Executing step: {step.name} ({step.step_type})")
             
             # Execute the workflow step using the new flexible method
@@ -233,9 +310,13 @@ class CoinBGCController:
                 self._print_parameter_universe_before_step(step, step_results, global_params)
             
             step_result = self.coin_bgc.execute_workflow_step(
-                step, region, model, self.datasets, step_results, global_params, self.verbose
+                step, region, model, self.datasets, step_results, global_params, self.workflow_config.bounds, self.verbose
             )
             step_results[step.name] = step_result
+            
+            # Record substep timing
+            substep_duration = time.time() - substep_start
+            self.timing_data['substep_times'][region_model_key][step.name] = substep_duration
             
             if self.verbose:
                 self._print_parameter_universe_after_step(step, step_result)
@@ -285,25 +366,776 @@ class CoinBGCController:
         print()
     
     def _run_final_simulations(self):
-        """Run final simulations using optimized parameters."""
+        """
+        Run final simulations using optimized parameters.
+        
+        Step 3.2: Run forward simulations corresponding to the datasets used 
+        in each step and save results to CSV files.
+        """
         print("  🎯 Running final simulations...")
-        # This will be implemented to run final simulations
-        # using the optimized parameters from all steps
-        pass
+        
+        # For each workflow step, run simulations based on its data sources
+        for step in self.workflow_config.steps:
+            if step.step_type == 'optimization':  # Only run simulations for optimization steps
+                self._run_simulations_for_step(step)
+        
+        print("  ✅ All final simulations completed")
+    
+    def _run_simulations_for_step(self, step):
+        """
+        Run simulations for a specific workflow step based on its data sources.
+        
+        Args:
+            step: WorkflowStep object containing data sources and configuration
+        """
+        print(f"    🔄 Running simulations for {step.name}...")
+        
+        # Get data sources used in this step
+        data_sources = step.data_sources
+        co2_usage = getattr(step, 'co2_data', False)
+        
+        # Handle co2_data as list (for multi-dataset steps)
+        if isinstance(co2_usage, list):
+            co2_map = dict(zip(data_sources, co2_usage))
+        else:
+            co2_map = {source: co2_usage for source in data_sources}
+        
+        simulation_count = 0
+        
+        # Run simulations for each region/model combination
+        for region in self.regions:
+            for model in self.models:
+                # Get parameters for this region/model/step
+                if (region in self.results and 
+                    model in self.results[region] and 
+                    step.name in self.results[region][model]):
+                    
+                    params = self.results[region][model][step.name]
+                    
+                    # Run simulation for each data source used in this step
+                    for data_source in data_sources:
+                        if data_source in self.datasets:
+                            # Filter dataset for this region/model
+                            dataset = self._filter_dataset(self.datasets[data_source], region, model)
+                            if not dataset.empty:
+                                # Determine if CO2 data should be used
+                                use_co2 = co2_map.get(data_source, False)
+                                co2_data = self.datasets.get('co2_data') if use_co2 else None
+                                
+                                # Run simulation
+                                results = self.coin_bgc.execute_model(dataset, params, co2_data)
+                                
+                                # Save simulation results
+                                filename = f"simulation_{region}_{model}_{data_source}_{step.name}_{self.schema_suffix}_{self.timestamp}.csv"
+                                filepath = os.path.join(self.output_dir, filename)
+                                results.to_csv(filepath, index=False)
+                                simulation_count += 1
+        
+        print(f"      ✅ Created {simulation_count} simulation files for {step.name}")
+    
+    def _filter_dataset(self, dataset, region: str, model: str):
+        """
+        Filter a dataset for a specific region and model combination.
+        
+        Args:
+            dataset: pandas DataFrame with region and model columns
+            region: Target region name
+            model: Target model name
+            
+        Returns:
+            Filtered DataFrame
+        """
+        if 'region' in dataset.columns and 'model' in dataset.columns:
+            return dataset[(dataset['region'] == region) & (dataset['model'] == model)]
+        else:
+            # Return empty DataFrame if columns don't exist
+            return dataset.iloc[0:0]
     
     def _save_all_results(self):
-        """Save all results to CSV files."""
+        """
+        Save all results to CSV files.
+        
+        Step 3.1: Write out one CSV file for each processing substep in Step 2,
+        where all region/model pairs are a row in the CSV file showing model parameters.
+        """
         print("  💾 Saving results to CSV files...")
-        # This will be implemented to save all parameter files
-        # and simulation results to the output directory
-        pass
+        
+        # Step 3.1: Create CSV files for each substep with all region/model parameter combinations
+        for step in self.workflow_config.steps:
+            self._create_substep_parameter_csv(step.name)
+        
+        print("  ✅ All parameter CSV files created")
+    
+    def _create_substep_parameter_csv(self, step_name: str):
+        """
+        Create a CSV file for a specific substep with all region/model parameter combinations
+        and goodness-of-fit metrics (MSE, R, R²).
+        
+        Args:
+            step_name: Name of the workflow step (e.g., 'step2_1', 'step2_2')
+        """
+        # Collect all parameter combinations for this step
+        all_rows = []
+        
+        for region in self.regions:
+            for model in self.models:
+                # Get parameters for this region/model/step combination
+                if (region in self.results and 
+                    model in self.results[region] and 
+                    step_name in self.results[region][model]):
+                    
+                    # Create row with region, model, step, and all parameters
+                    param_data = self.results[region][model][step_name].copy()
+                    row = {
+                        'step': step_name,
+                        'region': region,
+                        'model': model,
+                        'timestamp': self.timestamp,
+                    }
+                    row.update(param_data)
+                    
+                    # Calculate goodness-of-fit metrics from simulation results
+                    metrics = self._calculate_goodness_of_fit_metrics(step_name, region, model)
+                    row.update(metrics)
+                    
+                    all_rows.append(row)
+        
+        if all_rows:
+            # Create DataFrame and save to CSV
+            import pandas as pd
+            df = pd.DataFrame(all_rows)
+            
+            # Define standardized column order (step, region, model, timestamp, metrics, then parameters)
+            priority_cols = ['step', 'region', 'model', 'timestamp']
+            metrics_cols = ['MSE', 'R', 'R_squared', 'R_p_value']  # Metrics columns
+            param_cols = [col for col in df.columns if col not in priority_cols + metrics_cols]
+            ordered_cols = priority_cols + metrics_cols + sorted(param_cols)
+            
+            # Ensure all columns exist (some metrics might be missing if calculation failed)
+            for col in ordered_cols:
+                if col not in df.columns:
+                    df[col] = None
+            
+            # Reorder columns
+            df = df[ordered_cols]
+            
+            # Save to CSV
+            filename = f"substep_parameters_{step_name}_{self.schema_suffix}_{self.timestamp}.csv"
+            filepath = os.path.join(self.output_dir, filename)
+            df.to_csv(filepath, index=False)
+            
+            print(f"    📄 Created {filename} with {len(all_rows)} region/model combinations (with goodness-of-fit metrics)")
+    
+    def _calculate_goodness_of_fit_metrics(self, step_name: str, region: str, model: str) -> dict:
+        """
+        Calculate goodness-of-fit metrics (MSE, R, R²) for a specific step/region/model combination.
+        
+        Args:
+            step_name: Workflow step name
+            region: Region name
+            model: Model name
+            
+        Returns:
+            Dictionary with metrics: MSE, R, R_squared, R_p_value
+        """
+        import numpy as np
+        from scipy.stats import pearsonr
+        import pandas as pd
+        import os
+        
+        # Initialize metrics with None (in case calculation fails)
+        metrics = {'MSE': None, 'R': None, 'R_squared': None, 'R_p_value': None}
+        
+        try:
+            # Find all simulation files for this step/region/model combination
+            step_config = next((s for s in self.workflow_config.steps if s.name == step_name), None)
+            if not step_config:
+                return metrics
+                
+            # Collect all data and model values from simulation files for this step
+            all_data_values = []
+            all_model_values = []
+            
+            # Check each data source used in this step
+            for data_source in step_config.data_sources:
+                filename = f"simulation_{region}_{model}_{data_source}_{step_name}_{self.schema_suffix}_{self.timestamp}.csv"
+                filepath = os.path.join(self.output_dir, filename)
+                
+                if os.path.exists(filepath):
+                    df = pd.read_csv(filepath)
+                    if 'gpp_data' in df.columns and 'GPP_model' in df.columns:
+                        # Remove any NaN values
+                        valid_mask = ~(pd.isna(df['gpp_data']) | pd.isna(df['GPP_model']))
+                        if valid_mask.sum() > 0:
+                            all_data_values.extend(df.loc[valid_mask, 'gpp_data'].tolist())
+                            all_model_values.extend(df.loc[valid_mask, 'GPP_model'].tolist())
+            
+            if len(all_data_values) > 1 and len(all_model_values) > 1:
+                data_array = np.array(all_data_values)
+                model_array = np.array(all_model_values)
+                
+                # Calculate MSE
+                mse = np.mean((data_array - model_array) ** 2)
+                metrics['MSE'] = float(mse)
+                
+                # Calculate Pearson correlation coefficient R
+                r_coeff, p_value = pearsonr(data_array, model_array)
+                metrics['R'] = float(r_coeff)
+                metrics['R_p_value'] = float(p_value)
+                
+                # Calculate R² (coefficient of determination)
+                ss_res = np.sum((data_array - model_array) ** 2)  # Sum of squared residuals
+                ss_tot = np.sum((data_array - np.mean(data_array)) ** 2)  # Total sum of squares
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                metrics['R_squared'] = float(r_squared)
+                
+        except Exception as e:
+            # If any calculation fails, metrics remain None
+            print(f"      ⚠️  Failed to calculate metrics for {step_name}/{region}/{model}: {str(e)}")
+            
+        return metrics
     
     def _generate_pdf_books(self):
-        """Generate PDF visualization books."""
+        """
+        Generate PDF visualization books.
+        
+        Creates PDF books for each substep based on data sources used:
+        - If only piControl: piControl book only
+        - If only full/bgc: full/bgc book only  
+        - If piControl + (full/bgc): both piControl book and full/bgc book
+        
+        Charts show up to 4 lines: red for full (thick data, thin simulation), 
+        blue for bgc (thick data, thin simulation).
+        """
         print("  📖 Generating PDF visualization books...")
-        # This will be implemented to create the PDF books
-        # showing all the optimization results and charts
-        pass
+        
+        # Import required libraries
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+        import pandas as pd
+        
+        # Create books for each workflow step
+        for step in self.workflow_config.steps:
+            if step.step_type == 'optimization':
+                self._create_pdf_book_for_step(step)
+        
+        print("  ✅ All PDF books generated")
+    
+    def _create_pdf_book_for_step(self, step):
+        """
+        Create PDF book(s) for a specific workflow step based on its data sources.
+        
+        Args:
+            step: WorkflowStep object containing data sources and configuration
+        """
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+        import pandas as pd
+        
+        data_sources = step.data_sources
+        
+        # Determine which books to create based on data sources
+        needs_picontrol_book = 'piControl' in data_sources
+        needs_bgc_full_book = any(source in ['bgc', 'full'] for source in data_sources)
+        
+        # Create piControl book if needed
+        if needs_picontrol_book:
+            self._create_single_pdf_book(step, ['piControl'], f"{step.name}_piControl_Results_{self.schema_suffix}_{self.timestamp}.pdf")
+        
+        # Create BGC/Full book if needed
+        if needs_bgc_full_book:
+            bgc_full_sources = [source for source in data_sources if source in ['bgc', 'full']]
+            self._create_single_pdf_book(step, bgc_full_sources, f"{step.name}_BGC_Full_Results_{self.schema_suffix}_{self.timestamp}.pdf")
+    
+    def _create_single_pdf_book(self, step, data_sources_for_book, pdf_filename):
+        """
+        Create a single PDF book for specific data sources.
+        
+        Args:
+            step: WorkflowStep object
+            data_sources_for_book: List of data sources to include in this book
+            pdf_filename: Name of the PDF file to create
+        """
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+        import pandas as pd
+        import glob
+        
+        pdf_path = os.path.join(self.output_dir, pdf_filename)
+        pages_created = 0
+        
+        with PdfPages(pdf_path) as pdf:
+            # Create a page for each region/model combination
+            for region in self.regions:
+                for model in self.models:
+                    # Check if we have results for this region/model/step
+                    if (region in self.results and 
+                        model in self.results[region] and 
+                        step.name in self.results[region][model]):
+                        
+                        # Create the chart for this region/model
+                        fig = self._create_chart_for_region_model(step, region, model, data_sources_for_book)
+                        if fig:
+                            pdf.savefig(fig)
+                            plt.close(fig)
+                            pages_created += 1
+        
+        if pages_created > 0:
+            print(f"      📖 Created {pdf_filename} with {pages_created} pages")
+        else:
+            # Remove empty PDF file
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
+    
+    def _create_chart_for_region_model(self, step, region, model, data_sources):
+        """
+        Create a chart for a specific region/model combination showing data vs model results.
+        
+        Args:
+            step: WorkflowStep object
+            region: Region name
+            model: Model name  
+            data_sources: List of data sources to plot
+            
+        Returns:
+            matplotlib Figure object or None if no data available
+        """
+        import matplotlib.pyplot as plt
+        import pandas as pd
+        import glob
+        
+        # Find simulation files for this region/model/step
+        simulation_data = {}
+        for data_source in data_sources:
+            filename_pattern = f"simulation_{region}_{model}_{data_source}_{step.name}_{self.schema_suffix}_{self.timestamp}.csv"
+            filepath = os.path.join(self.output_dir, filename_pattern)
+            
+            if os.path.exists(filepath):
+                df = pd.read_csv(filepath)
+                simulation_data[data_source] = df
+        
+        if not simulation_data:
+            return None
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(12, 8))
+        
+        # Color mapping: red for full, blue for bgc, black for piControl
+        colors = {'full': 'red', 'bgc': 'blue', 'piControl': 'black'}
+        all_data_values = []
+        
+        # Plot each data source
+        for data_source, df in simulation_data.items():
+            color = colors.get(data_source, 'gray')
+            
+            # Plot GPP data (thick line) and model results (thin line)
+            if 'gpp_data' in df.columns and 'GPP_model' in df.columns:
+                # Thick line for data
+                ax.plot(df['year'], df['gpp_data'], color=color, linewidth=2, 
+                       label=f'GPP Data ({data_source.upper()})', alpha=0.8)
+                
+                # Thin line for model
+                ax.plot(df['year'], df['GPP_model'], color=color, linewidth=1, 
+                       label=f'GPP Model ({data_source.upper()})', alpha=0.6, linestyle='--')
+                
+                # Collect data for y-axis bounds
+                all_data_values.extend(list(df['gpp_data']) + list(df['GPP_model']))
+        
+        if not all_data_values:
+            plt.close(fig)
+            return None
+        
+        # Set y-axis bounds ensuring 0 is on the chart (adapted from coin_bgc_econ.py logic)
+        self._set_y_axis_bounds(ax, all_data_values)
+        
+        # Customize plot
+        ax.set_xlabel('Year', fontsize=12)
+        ax.set_ylabel('GPP (kg C m⁻² yr⁻¹)', fontsize=12)
+        ax.set_title(f'{step.name.replace("_", " ").title()}: {region} / {model}', 
+                    fontsize=14, fontweight='bold')
+        ax.legend(fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        # Add parameter box in lower left corner
+        self._add_parameter_box(ax, step, region, model)
+        
+        plt.tight_layout()
+        return fig
+    
+    def _set_y_axis_bounds(self, ax, data_values):
+        """
+        Set y-axis bounds ensuring 0 is always on the chart with appropriate padding.
+        
+        Adapted from the set_y_axis_bounds function in coin_bgc_econ.py.
+        
+        Args:
+            ax: matplotlib axis object
+            data_values: list or array of data values to plot
+        """
+        if not data_values:
+            return
+        
+        min_val = min(data_values)
+        max_val = max(data_values)
+        
+        if min_val >= 0:  # All positive data
+            ax.set_ylim(0, 1.1 * max_val)
+        elif max_val <= 0:  # All negative data
+            ax.set_ylim(1.1 * min_val, 0)
+        else:  # Mixed positive and negative data
+            ax.set_ylim(1.1 * min_val, 1.1 * max_val)
+    
+    def _add_parameter_box(self, ax, step, region, model):
+        """
+        Add parameter values in a box positioned in the lower left corner.
+        
+        Args:
+            ax: matplotlib axis object
+            step: WorkflowStep object
+            region: Region name
+            model: Model name
+        """
+        try:
+            # Get parameters for this region/model/step
+            if (region in self.results and 
+                model in self.results[region] and 
+                step.name in self.results[region][model]):
+                
+                params = self.results[region][model][step.name]
+                
+                # Format parameter text
+                param_text = f"Parameters for {step.name}:\n"
+                for param_name, param_value in params.items():
+                    if isinstance(param_value, (int, float)):
+                        param_text += f"  {param_name}: {param_value:.6f}\n"
+                    else:
+                        param_text += f"  {param_name}: {param_value}\n"
+                
+                # Add parameter text box in lower left corner
+                ax.text(0.02, 0.02, param_text, transform=ax.transAxes,
+                       verticalalignment='bottom', fontsize=8, fontfamily='monospace',
+                       bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
+        except Exception as e:
+            # If parameter extraction fails, just continue without parameters
+            pass
+    
+    def _generate_timing_report(self):
+        """Generate and display a comprehensive timing report."""
+        total_time = time.time() - self.timing_data['total_start_time']
+        
+        print()
+        print("=" * 60)
+        print("📊 TIMING REPORT")
+        print("=" * 60)
+        
+        # Overall timing
+        print(f"🕒 Total execution time: {self._format_time(total_time)}")
+        print()
+        
+        # Step-by-step timing
+        print("📋 Step-by-step breakdown:")
+        for step_name, step_time in self.timing_data['step_times'].items():
+            percentage = (step_time / total_time) * 100
+            step_display_name = step_name.replace('_', ' ').title()
+            print(f"  {step_display_name}: {self._format_time(step_time)} ({percentage:.1f}%)")
+        print()
+        
+        # Region/model timing analysis
+        if self.timing_data['region_model_times']:
+            print("🌍 Region/Model processing times:")
+            
+            # Sort by processing time (longest first)
+            sorted_regions = sorted(
+                self.timing_data['region_model_times'].items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )
+            
+            # Calculate statistics
+            times = list(self.timing_data['region_model_times'].values())
+            avg_time = sum(times) / len(times)
+            max_time = max(times)
+            min_time = min(times)
+            
+            print(f"  Average per region/model: {self._format_time(avg_time)}")
+            print(f"  Fastest: {self._format_time(min_time)}")
+            print(f"  Slowest: {self._format_time(max_time)}")
+            print()
+            
+            # Show individual region/model times
+            print("  Individual processing times:")
+            for region_model, processing_time in sorted_regions:
+                # Parse region_model key (format: region_model, but region might contain underscores)
+                parts = region_model.split('_')
+                if len(parts) >= 2:
+                    model = parts[-1]  # Last part is always the model
+                    region = '_'.join(parts[:-1])  # Everything else is the region
+                else:
+                    # Fallback if parsing fails
+                    region = region_model
+                    model = 'unknown'
+                    
+                slowness_factor = processing_time / avg_time
+                if slowness_factor > 1.5:
+                    indicator = " ⚠️  (slow convergence)"
+                elif slowness_factor < 0.7:
+                    indicator = " ✅ (fast convergence)"
+                else:
+                    indicator = ""
+                print(f"    {region} / {model}: {self._format_time(processing_time)}{indicator}")
+            print()
+        
+        # Show substep timing breakdown
+        if self.timing_data['substep_times']:
+            print("📊 Substep timing breakdown:")
+            
+            # Calculate average time per substep across all regions/models
+            substep_sums = {}
+            substep_counts = {}
+            
+            for region_model_key, substep_timings in self.timing_data['substep_times'].items():
+                for substep, duration in substep_timings.items():
+                    if substep not in substep_sums:
+                        substep_sums[substep] = 0.0
+                        substep_counts[substep] = 0
+                    substep_sums[substep] += duration
+                    substep_counts[substep] += 1
+            
+            # Sort substeps by average time
+            substep_averages = [(substep, substep_sums[substep] / substep_counts[substep]) 
+                              for substep in substep_sums.keys()]
+            substep_averages.sort(key=lambda x: x[1], reverse=True)
+            
+            print("  Average time per substep (across all regions/models):")
+            for substep, avg_time in substep_averages:
+                total_time = substep_sums[substep]
+                percentage = (total_time / total_time) * 100 if total_time > 0 else 0
+                print(f"    {substep}: {self._format_time(avg_time)} avg, {self._format_time(total_time)} total")
+            print()
+        
+        # Save timing data to CSV files
+        self._save_timing_data_to_csv()
+        self._save_substep_timing_matrix()
+        self._save_substep_timing_summary()
+        
+        print("=" * 60)
+    
+    def _format_time(self, seconds: float) -> str:
+        """Format time duration in a human-readable format."""
+        if seconds < 1:
+            return f"{seconds*1000:.0f}ms"
+        elif seconds < 60:
+            return f"{seconds:.1f}s"
+        elif seconds < 3600:
+            minutes = int(seconds // 60)
+            secs = seconds % 60
+            return f"{minutes}m {secs:.1f}s"
+        else:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            secs = seconds % 60
+            return f"{hours}h {minutes}m {secs:.1f}s"
+    
+    def _save_timing_data_to_csv(self):
+        """Save timing data to CSV file for further analysis."""
+        import pandas as pd
+        
+        # Create timing summary CSV
+        timing_rows = []
+        
+        # Add overall step timings
+        for step_name, step_time in self.timing_data['step_times'].items():
+            timing_rows.append({
+                'category': 'workflow_step',
+                'name': step_name,
+                'region': None,
+                'model': None,
+                'duration_seconds': step_time,
+                'timestamp': self.timestamp
+            })
+        
+        # Add region/model timings
+        for region_model, processing_time in self.timing_data['region_model_times'].items():
+            # Parse region_model key back to region and model
+            parts = region_model.split('_')
+            if len(parts) >= 2:
+                # Handle cases where region name might contain underscores
+                model = parts[-1]
+                region = '_'.join(parts[:-1])
+            else:
+                region = region_model
+                model = 'unknown'
+                
+            timing_rows.append({
+                'category': 'region_model',
+                'name': region_model,
+                'region': region,
+                'model': model,
+                'duration_seconds': processing_time,
+                'timestamp': self.timestamp
+            })
+        
+        if timing_rows:
+            df = pd.DataFrame(timing_rows)
+            
+            # Add total time row
+            total_time = time.time() - self.timing_data['total_start_time']
+            total_row = pd.DataFrame([{
+                'category': 'total',
+                'name': 'complete_workflow',
+                'region': None,
+                'model': None,
+                'duration_seconds': total_time,
+                'timestamp': self.timestamp
+            }])
+            df = pd.concat([df, total_row], ignore_index=True)
+            
+            # Save to CSV
+            filename = f"timing_report_{self.schema_suffix}_{self.timestamp}.csv"
+            filepath = os.path.join(self.output_dir, filename)
+            df.to_csv(filepath, index=False)
+            
+            print(f"💾 Timing data saved to: {filename}")
+    
+    def _save_substep_timing_matrix(self):
+        """
+        Save the 2D substep timing matrix as CSV.
+        
+        Creates a matrix with region/model pairs as rows and substeps as columns,
+        showing the time spent in each substep for each region/model combination.
+        """
+        import pandas as pd
+        
+        if not self.timing_data['substep_times']:
+            return
+        
+        # Get all unique substeps from the workflow
+        all_substeps = [step.name for step in self.workflow_config.steps]
+        
+        # Create rows for the matrix
+        matrix_rows = []
+        
+        for region_model_key, substep_timings in self.timing_data['substep_times'].items():
+            # Parse region and model from key
+            parts = region_model_key.split('_')
+            if len(parts) >= 2:
+                model = parts[-1]
+                region = '_'.join(parts[:-1])
+            else:
+                region = region_model_key
+                model = 'unknown'
+            
+            # Create row with region, model, and timing for each substep
+            row = {'region': region, 'model': model}
+            
+            # Add timing for each substep (or 0 if not present)
+            for substep in all_substeps:
+                row[substep] = substep_timings.get(substep, 0.0)
+            
+            # Add total time for this region/model
+            row['total_time'] = sum(substep_timings.values())
+            
+            matrix_rows.append(row)
+        
+        if matrix_rows:
+            df = pd.DataFrame(matrix_rows)
+            
+            # Save matrix CSV
+            filename = f"substep_timing_matrix_{self.schema_suffix}_{self.timestamp}.csv"
+            filepath = os.path.join(self.output_dir, filename)
+            df.to_csv(filepath, index=False)
+            
+            print(f"💾 Substep timing matrix saved to: {filename}")
+    
+    def _save_substep_timing_summary(self):
+        """
+        Save detailed substep timing summary as CSV.
+        
+        Creates a long-format CSV with columns: region, model, substep, duration_seconds.
+        Each row represents one substep execution for one region/model combination.
+        """
+        import pandas as pd
+        
+        if not self.timing_data['substep_times']:
+            return
+        
+        summary_rows = []
+        
+        for region_model_key, substep_timings in self.timing_data['substep_times'].items():
+            # Parse region and model from key
+            parts = region_model_key.split('_')
+            if len(parts) >= 2:
+                model = parts[-1]
+                region = '_'.join(parts[:-1])
+            else:
+                region = region_model_key
+                model = 'unknown'
+            
+            # Create one row per substep for this region/model
+            for substep, duration in substep_timings.items():
+                summary_rows.append({
+                    'region': region,
+                    'model': model,
+                    'substep': substep,
+                    'duration_seconds': duration,
+                    'timestamp': self.timestamp
+                })
+        
+        if summary_rows:
+            df = pd.DataFrame(summary_rows)
+            
+            # Add summary statistics
+            # Calculate totals by region/model
+            region_model_totals = df.groupby(['region', 'model'])['duration_seconds'].sum().reset_index()
+            region_model_totals['substep'] = 'TOTAL_REGION_MODEL'
+            region_model_totals['timestamp'] = self.timestamp
+            
+            # Calculate totals by substep (across all regions/models)
+            substep_totals = df.groupby('substep')['duration_seconds'].sum().reset_index()
+            substep_totals['region'] = 'ALL_REGIONS'
+            substep_totals['model'] = 'ALL_MODELS'
+            substep_totals['timestamp'] = self.timestamp
+            
+            # Combine all data
+            full_df = pd.concat([df, region_model_totals, substep_totals], ignore_index=True)
+            
+            # Save summary CSV
+            filename = f"substep_timing_summary_{self.schema_suffix}_{self.timestamp}.csv"
+            filepath = os.path.join(self.output_dir, filename)
+            full_df.to_csv(filepath, index=False)
+            
+            print(f"💾 Substep timing summary saved to: {filename}")
+    
+    def _extract_schema_suffix(self, workflow_file: str) -> str:
+        """
+        Extract the suffix from workflow schema filename.
+        
+        For example:
+        - "workflow_schema_example.json" → "example"
+        - "workflow_schema_custom.json" → "custom"
+        - "my_workflow.json" → "my_workflow" (fallback)
+        
+        Args:
+            workflow_file: Path to the workflow file
+            
+        Returns:
+            Extracted suffix string
+        """
+        import os
+        
+        # Get just the filename without path
+        filename = os.path.basename(workflow_file)
+        
+        # Remove .json extension
+        base_name = filename.replace('.json', '')
+        
+        # Try to extract suffix after "workflow_schema_"
+        if base_name.startswith('workflow_schema_'):
+            suffix = base_name[len('workflow_schema_'):]
+            return suffix if suffix else 'default'
+        else:
+            # Fallback: use the entire base filename
+            return base_name
 
 
 def main():
@@ -344,15 +1176,13 @@ Examples:
     parser.add_argument(
         '--regions',
         type=str,
-        required=True,
-        help='Regions to process (comma-separated or single region)'
+        help='Regions to process (comma-separated or single region). If not specified, processes all regions.'
     )
     
     parser.add_argument(
         '--models',
         type=str,
-        required=True,
-        help='Models to process (comma-separated or single model)'
+        help='Models to process (comma-separated or single model). If not specified, processes all models.'
     )
     
     parser.add_argument(
@@ -368,9 +1198,9 @@ Examples:
         print(f"❌ Error: Workflow file '{args.json}' not found")
         sys.exit(1)
     
-    # Parse regions and models
-    regions = [r.strip() for r in args.regions.split(',')]
-    models = [m.strip() for m in args.models.split(',')]
+    # Parse regions and models (or use None to indicate "all")
+    regions = [r.strip() for r in args.regions.split(',')] if args.regions else None
+    models = [m.strip() for m in args.models.split(',')] if args.models else None
     
     # Create and run the controller
     controller = CoinBGCController(args.json, args.alpha, args.Ksoil_0, regions, models, args.verbose)

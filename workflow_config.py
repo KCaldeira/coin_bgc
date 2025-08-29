@@ -53,6 +53,7 @@ class WorkflowConfig:
     workflow_name: str
     description: str
     global_parameters: Dict[str, ParameterSpec]
+    bounds: Dict[str, List[float]]
     steps: List[WorkflowStep]
     simulations: List[SimulationSpec]
 
@@ -97,6 +98,9 @@ class WorkflowConfigLoader:
             step = self._parse_workflow_step(step_data)
             steps.append(step)
         
+        # Parse bounds
+        bounds = config_data.get('bounds', {})
+        
         # Parse simulations
         simulations = []
         for sim_data in config_data.get('simulations', []):
@@ -107,6 +111,7 @@ class WorkflowConfigLoader:
             workflow_name=config_data['workflow_name'],
             description=config_data['description'],
             global_parameters=global_parameters,
+            bounds=bounds,
             steps=steps,
             simulations=simulations
         )
@@ -166,14 +171,31 @@ class WorkflowConfigLoader:
             if source not in self.valid_data_sources:
                 raise ValueError(f"Invalid data source: {source}")
         
-        # Parse knowns and unknowns
+        # Parse parameters dictionary
+        parameters = step_data.get('parameters', {})
+        
+        # Parse knowns and unknowns from lists and parameters
         knowns = {}
-        for param_name, param_spec in step_data.get('knowns', {}).items():
-            knowns[param_name] = self._parse_parameter_spec(param_name, param_spec)
+        known_names = step_data.get('knowns', [])
+        for param_name in known_names:
+            if param_name in parameters:
+                param_value = parameters[param_name]
+                if isinstance(param_value, dict):
+                    knowns[param_name] = self._parse_parameter_spec(param_name, param_value)
+                else:
+                    # Direct value
+                    knowns[param_name] = ParameterSpec(source="value", value=param_value)
         
         unknowns = {}
-        for param_name, param_spec in step_data.get('unknowns', {}).items():
-            unknowns[param_name] = self._parse_parameter_spec(param_name, param_spec)
+        unknown_names = step_data.get('unknowns', [])
+        for param_name in unknown_names:
+            if param_name in parameters:
+                param_value = parameters[param_name]
+                if isinstance(param_value, dict):
+                    unknowns[param_name] = self._parse_parameter_spec(param_name, param_value)
+                else:
+                    # Direct value - this becomes the starting value for optimization
+                    unknowns[param_name] = ParameterSpec(source="value", value=param_value)
         
         return WorkflowStep(
             name=step_data['name'],
