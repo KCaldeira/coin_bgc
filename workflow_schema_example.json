@@ -78,7 +78,8 @@
       "name": "step2_4",
       "description": "Optimize all parameters using bgc_data and piControl_data",
       "step_type": "optimization", 
-      "data_sources": ["bgc", "piControl"],
+      "optimization_data_sources": ["bgc", "piControl"],
+      "plotting_data_sources": ["bgc", "piControl"],
       "co2_data": [true, false],
       "parameters": {
         "Ksoil_0": {"source": "global"},

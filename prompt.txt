@@ -1,0 +1,16 @@
+I would like to make the plotting more flexible and say in each step what plots need to be made.
+
+For the statistics for in the csv file with the parameters, we need to calculate statistics based on the time series used in the curve fitting.
+
+However, there are times when we will in the future want to, for example, fit on the historical period and then run for the ssp585 period.
+
+Therefore, I would like to be able to specify for each step, which datasets should be used in the plotting step.
+
+Right now, that value should be the same as what is in the fitting step, so maybe there could be some way other vector like plotting_data_sources that will be used to generate the simulation csv files and the pdf charts.
+
+The same rules for plotting apply:
+
+piControl should be on its book.
+whatwever bgc,historical,full, historical-bgc, ssp585, ssp585-bgc should all be on the same page in the second pdf book.
+
+Can you come up with a plan on how to implement this?

@@ -833,7 +833,7 @@ class CoinBGC:
         from workflow_config import WorkflowExecutor
         
         # Get region/model specific data
-        step_datasets = self._filter_datasets_for_region_model(datasets, step.data_sources, region, model)
+        step_datasets = self._filter_datasets_for_region_model(datasets, step.optimization_data_sources, region, model)
         
         if step.step_type == "calculation":
             return self._execute_calculation_step(step, step_datasets, previous_results, global_params)
@@ -952,7 +952,7 @@ class CoinBGC:
         # Get all datasets for optimization (handles both single and multiple datasets)
         optimization_datasets = []
         
-        for source in step.data_sources:
+        for source in step.optimization_data_sources:
             if source in datasets:
                 df = datasets[source]  # datasets are already filtered by region/model
                 if not df.empty:

@@ -390,8 +390,16 @@ class CoinBGCController:
         """
         print(f"    🔄 Running simulations for {step.name}...")
         
-        # Get data sources used in this step
-        data_sources = step.data_sources
+        # Get data sources for simulation (use plotting_data_sources if specified, otherwise use optimization_data_sources)
+        # If plotting_data_sources is an empty list, skip simulations entirely
+        if step.plotting_data_sources is not None:
+            data_sources = step.plotting_data_sources
+            if not data_sources:  # Empty list means no simulations
+                print(f"      ⏭️  No simulations generated for {step.name} (plotting_data_sources is empty)")
+                return  # Skip simulations for this step
+        else:
+            data_sources = step.optimization_data_sources
+            
         co2_usage = getattr(step, 'co2_data', False)
         
         # Handle co2_data as list (for multi-dataset steps)
@@ -556,8 +564,11 @@ class CoinBGCController:
             all_data_values = []
             all_model_values = []
             
-            # Check each data source used in this step
-            for data_source in step_config.data_sources:
+            # Statistics are always calculated from the optimization data sources (the fitting data)
+            statistics_data_sources = step_config.optimization_data_sources
+                
+            # Check each data source used for statistics calculation
+            for data_source in statistics_data_sources:
                 filename = f"simulation_{region}_{model}_{data_source}_{step_name}_{self.schema_suffix}_{self.timestamp}.csv"
                 filepath = os.path.join(self.output_dir, filename)
                 
@@ -632,11 +643,18 @@ class CoinBGCController:
         from matplotlib.backends.backend_pdf import PdfPages
         import pandas as pd
         
-        data_sources = step.data_sources
-        
-        # Determine which books to create based on data sources
-        needs_picontrol_book = 'piControl' in data_sources
-        needs_bgc_full_book = any(source in ['bgc', 'full'] for source in data_sources)
+        # Get plotting data sources (use plotting_data_sources if specified, otherwise use optimization_data_sources)
+        # If plotting_data_sources is an empty list, skip plotting entirely
+        if step.plotting_data_sources is not None:
+            plotting_data_sources = step.plotting_data_sources
+            if not plotting_data_sources:  # Empty list means no plotting
+                return  # Skip plotting for this step
+        else:
+            plotting_data_sources = step.optimization_data_sources
+            
+        # Determine which books to create based on plotting data sources
+        needs_picontrol_book = 'piControl' in plotting_data_sources
+        needs_bgc_full_book = any(source in ['bgc', 'full', 'historical', 'ssp585'] for source in plotting_data_sources)
         
         # Create piControl book if needed
         if needs_picontrol_book:
@@ -644,7 +662,7 @@ class CoinBGCController:
         
         # Create BGC/Full book if needed
         if needs_bgc_full_book:
-            bgc_full_sources = [source for source in data_sources if source in ['bgc', 'full']]
+            bgc_full_sources = [source for source in plotting_data_sources if source in ['bgc', 'full', 'historical', 'ssp585']]
             self._create_single_pdf_book(step, bgc_full_sources, f"{step.name}_BGC_Full_Results_{self.schema_suffix}_{self.timestamp}.pdf")
     
     def _create_single_pdf_book(self, step, data_sources_for_book, pdf_filename):

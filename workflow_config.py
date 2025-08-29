@@ -30,11 +30,12 @@ class WorkflowStep:
     name: str
     description: str
     step_type: str  # 'calculation', 'optimization', 'multi_optimization'
-    data_sources: List[str]
+    optimization_data_sources: List[str]  # Data used for curve fitting
     co2_data: bool | List[bool]
     knowns: Dict[str, ParameterSpec]
     unknowns: Dict[str, ParameterSpec]
     calculations: Optional[Dict[str, str]] = None
+    plotting_data_sources: Optional[List[str]] = None  # Data used for plotting (defaults to optimization_data_sources)
 
 
 @dataclass
@@ -152,24 +153,37 @@ class WorkflowConfigLoader:
     
     def _parse_workflow_step(self, step_data: Dict[str, Any]) -> WorkflowStep:
         """Parse a workflow step specification."""
-        # Validate required fields
-        required_fields = ['name', 'description', 'step_type', 'data_sources']
+        # Validate required fields (allow either 'data_sources' or 'optimization_data_sources' for backward compatibility)
+        required_fields = ['name', 'description', 'step_type']
         for field in required_fields:
             if field not in step_data:
                 raise ValueError(f"Missing required field '{field}' in step")
+                
+        # Check that either old or new data sources field is present
+        if 'optimization_data_sources' not in step_data and 'data_sources' not in step_data:
+            raise ValueError(f"Step {step_data.get('name', 'unknown')} must have either 'optimization_data_sources' or 'data_sources' field")
         
         step_type = step_data['step_type']
         if step_type not in self.valid_step_types:
             raise ValueError(f"Invalid step type: {step_type}")
         
-        # Validate data sources
-        data_sources = step_data['data_sources']
-        if not isinstance(data_sources, list):
-            data_sources = [data_sources]
+        # Handle backward compatibility: support both old 'data_sources' and new 'optimization_data_sources'
+        if 'optimization_data_sources' in step_data:
+            optimization_data_sources = step_data['optimization_data_sources']
+        elif 'data_sources' in step_data:
+            optimization_data_sources = step_data['data_sources']  # Backward compatibility
+        else:
+            raise ValueError(f"Step {step_data.get('name', 'unknown')} must have 'optimization_data_sources' field")
+            
+        if not isinstance(optimization_data_sources, list):
+            optimization_data_sources = [optimization_data_sources]
         
-        for source in data_sources:
+        for source in optimization_data_sources:
             if source not in self.valid_data_sources:
-                raise ValueError(f"Invalid data source: {source}")
+                raise ValueError(f"Invalid optimization data source: {source}")
+                
+        # Handle plotting data sources (optional, defaults to optimization_data_sources)
+        plotting_data_sources = step_data.get('plotting_data_sources', None)
         
         # Parse parameters dictionary
         parameters = step_data.get('parameters', {})
@@ -201,11 +215,12 @@ class WorkflowConfigLoader:
             name=step_data['name'],
             description=step_data['description'],
             step_type=step_type,
-            data_sources=data_sources,
+            optimization_data_sources=optimization_data_sources,
             co2_data=step_data.get('co2_data', False),
             knowns=knowns,
             unknowns=unknowns,
-            calculations=step_data.get('calculations')
+            calculations=step_data.get('calculations'),
+            plotting_data_sources=plotting_data_sources
         )
     
     def _parse_simulation_spec(self, sim_data: Dict[str, Any]) -> SimulationSpec:
