@@ -752,9 +752,9 @@ class CoinBGCController:
                 ax.plot(df['year'], df['gpp_data'], color=color, linewidth=2, 
                        label=f'GPP Data ({data_source.upper()})', alpha=0.8)
                 
-                # Thin line for model
-                ax.plot(df['year'], df['GPP_model'], color=color, linewidth=1, 
-                       label=f'GPP Model ({data_source.upper()})', alpha=0.6, linestyle='--')
+                # Thin solid line for model
+                ax.plot(df['year'], df['GPP_model'], color=color, linewidth=0.5, 
+                       label=f'GPP Model ({data_source.upper()})', alpha=0.6)
                 
                 # Collect data for y-axis bounds
                 all_data_values.extend(list(df['gpp_data']) + list(df['GPP_model']))
