@@ -655,7 +655,26 @@ class CoinBGC:
                     results.append(zero_row)
                 break
         
-        return pd.DataFrame(results)
+        # Create the DataFrame
+        df_results = pd.DataFrame(results)
+        
+        # Validate model outputs and replace invalid values with penalty values
+        # This prevents optimizer crashes and guides it away from bad parameter regions
+        penalty_value = 1e20  # Large positive value signals "very bad fit" to optimizer
+        
+        if 'GPP_model' in df_results.columns and np.any(~np.isfinite(df_results['GPP_model'])):
+            invalid_count = np.sum(~np.isfinite(df_results['GPP_model']))
+            print(f"    ⚠️  Warning: {invalid_count} invalid GPP_model values detected, replacing with penalty values")
+            df_results['GPP_model'] = np.where(np.isfinite(df_results['GPP_model']), 
+                                             df_results['GPP_model'], penalty_value)
+        
+        if 'NBP_model' in df_results.columns and np.any(~np.isfinite(df_results['NBP_model'])):
+            invalid_count = np.sum(~np.isfinite(df_results['NBP_model']))
+            print(f"    ⚠️  Warning: {invalid_count} invalid NBP_model values detected, replacing with penalty values")
+            df_results['NBP_model'] = np.where(np.isfinite(df_results['NBP_model']), 
+                                             df_results['NBP_model'], penalty_value)
+        
+        return df_results
     
     
 
