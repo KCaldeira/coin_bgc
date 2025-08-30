@@ -18,7 +18,7 @@ for alpha in "${ALPHAS[@]}"; do
         echo "Starting: alpha=${alpha}, ksoil=${ksoil}"
         
         # Run in background and redirect output to log file
-        (python main.py --alpha="${alpha}" --Ksoil_0="${ksoil}" --json workflow_schema_example.json) > "${log_file}" 2>&1 &
+        (python main.py --alpha="${alpha}" --Ksoil_0="${ksoil}"  --regions "China,Canada,Brazil,Zimbabwe" --json workflow_schema_example.json) > "${log_file}" 2>&1 &
     done
 done
 

@@ -6,12 +6,16 @@
     "alpha": {"source": "user_input", "description": "Production function exponent"}
   },
   "bounds": {
+    "Cland_0":[0.0,200.0],
+    "Kresp_0":[0.0,1.0],
     "Ktfp_0": [0.01, 1.0],
     "Ktfp_tas1": [-0.4, 0.4],
     "Ktfp_tas2": [-0.4, 0.4],
     "Ktfp_pr1": [-0.4, 0.4],
     "Ktfp_pr2": [-1.0, 1.0],
-    "Ktfp_co2_half": [10.0, 10000.0]
+    "Ktfp_co2_half": [10.0, 10000.0],
+    "Ksoil_0":[0.01,0.25],
+    "alpha":[0.0,1.0]
   },
   "steps": [
     {
@@ -135,14 +139,37 @@
         "Ktfp_0": {"source": "step", "step": "step2_4"},
 	"Ktfp_tas0": {"source": "step", "step": "step2_5"},
         "Ktfp_pr0": {"source": "step", "step": "step2_5"},
-        "Ktfp_co2_half": {"source": "step", "step": "step2_4"},
-        "Ktfp_tas1": {"source": "step", "step": "step2_4"},
-        "Ktfp_tas2": {"source": "step", "step": "step2_4"},
-       	"Ktfp_pr1": {"source": "step", "step": "step2_4"},
-        "Ktfp_pr2": {"source": "step", "step": "step2_4"}
-    },
+        "Ktfp_co2_half": {"source": "step", "step": "step2_5"},
+        "Ktfp_tas1": {"source": "step", "step": "step2_5"},
+        "Ktfp_tas2": {"source": "step", "step": "step2_5"},
+       	"Ktfp_pr1": {"source": "step", "step": "step2_5"},
+        "Ktfp_pr2": {"source": "step", "step": "step2_5"}
+      },
       "knowns": ["Ksoil_0", "alpha", "Kresp_0", "Cland_0", "Ktfp_tas0", "Ktfp_pr0"],
       "unknowns": ["Ktfp_0", "Ktfp_tas1", "Ktfp_tas2", "Ktfp_pr1", "Ktfp_pr2", "Ktfp_co2_half"]
+      },
+    {
+      "name": "step2_7",
+      "description": "Complete optimization using all datasets",
+      "step_type": "optimization",
+      "data_sources": [ "bgc", "full"],
+      "co2_data": [ true, true],
+      "parameters": {
+        "Ksoil_0": {"source": "global"},
+        "alpha": {"source": "global"},
+        "Kresp_0": {"source": "step", "step": "step2_6"},
+        "Cland_0": {"source": "step", "step": "step2_6"},
+        "Ktfp_0": {"source": "step", "step": "step2_6"},
+        "Ktfp_tas0": {"source": "step", "step": "step2_5"},
+        "Ktfp_pr0": {"source": "step", "step": "step2_5"},
+        "Ktfp_co2_half": {"source": "step", "step": "step2_6"},
+        "Ktfp_tas1": {"source": "step", "step": "step2_6"},
+        "Ktfp_tas2": {"source": "step", "step": "step2_6"},
+        "Ktfp_pr1": {"source": "step", "step": "step2_6"},
+        "Ktfp_pr2": {"source": "step", "step": "step2_6"}
+    },
+      "knowns": ["Ktfp_tas0", "Ktfp_pr0"],
+      "unknowns": ["Ksoil_0", "alpha", "Kresp_0", "Cland_0","Ktfp_0", "Ktfp_tas1", "Ktfp_tas2", "Ktfp_pr1", "Ktfp_pr2", "Ktfp_co2_half"]
     }
   ],
   "simulations": [
