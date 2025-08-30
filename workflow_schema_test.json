@@ -1,0 +1,78 @@
+{
+  "workflow_name": "COIN-BGC Standard Pipeline",
+  "description": "Standard 6-step optimization pipeline for COIN-BGC",
+  "global_parameters": {
+    "Ksoil_0": {"source": "user_input", "description": "Soil respiration parameter"},
+    "alpha": {"source": "user_input", "description": "Production function exponent"}
+  },
+  "bounds": {
+    "Ktfp_0": [0.01, 1.0],
+    "Ktfp_tas1": [-0.4, 0.4],
+    "Ktfp_tas2": [-0.4, 0.4],
+    "Ktfp_pr1": [-0.4, 0.4],
+    "Ktfp_pr2": [-1.0, 1.0],
+    "Ktfp_co2_half": [10.0, 10000.0]
+  },
+  "steps": [
+    {
+      "name": "step2_1",
+      "description": "Calculate initial parameters from piControl data",
+      "step_type": "calculation",
+      "data_sources": ["piControl"],
+      "co2_data": false,
+      "calculations": {
+        "Kresp_0": "1 - npp_mean / gpp_mean",
+        "Cland_0": "npp_mean / Ksoil_0",
+        "Ktfp_0": "gpp_mean / (Cland_0 ** alpha)",
+        "Ktfp_tas0": "tas_mean",
+        "Ktfp_pr0": "pr_mean"
+      }
+    },
+    {
+      "name": "step2_2", 
+      "description": "Optimize climate sensitivity parameters using piCOntrol data",
+      "step_type": "optimization",
+      "data_sources": ["piControl"],
+      "co2_data": true,
+      "parameters": {
+        "Ksoil_0": {"source": "global"},
+        "alpha": {"source": "global"},
+        "Kresp_0": {"source": "step", "step": "step2_1"},
+        "Cland_0": {"source": "step", "step": "step2_1"},
+        "Ktfp_tas0": {"source": "step", "step": "step2_1"},
+        "Ktfp_pr0": {"source": "step", "step": "step2_1"},
+        "Ktfp_co2_half": 0.0,
+        "Ktfp_0": {"source": "step", "step": "step2_1"},
+        "Ktfp_tas1": 0.001,
+        "Ktfp_tas2": 0.001,
+        "Ktfp_pr1": 0.001,
+        "Ktfp_pr2": 0.001
+      },
+      "knowns": ["Ksoil_0", "alpha", "Kresp_0", "Cland_0", "Ktfp_tas0", "Ktfp_pr0", "Ktfp_co2_half"],
+      "unknowns": ["Ktfp_0", "Ktfp_tas1", "Ktfp_tas2", "Ktfp_pr1", "Ktfp_pr2"]
+    }
+  ],
+  "simulations": [
+    {
+      "name": "piControl",
+      "description": "piControl simulation using final parameters",
+      "data_source": "piControl",
+      "co2_data": false,
+      "parameters_source": "step2_6"
+    },
+    {
+      "name": "bgc", 
+      "description": "BGC simulation using final parameters",
+      "data_source": "bgc",
+      "co2_data": true,
+      "parameters_source": "step2_6"
+    },
+    {
+      "name": "full",
+      "description": "Full simulation using final parameters", 
+      "data_source": "full",
+      "co2_data": true,
+      "parameters_source": "step2_6"
+    }
+  ]
+}

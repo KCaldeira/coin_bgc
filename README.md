@@ -80,6 +80,10 @@ The system uses JSON configuration files to define flexible optimization workflo
 ### Command Line Interface
 
 ```bash
+
+# Good testing command
+python main.py --alpha=0.5 --Ksoil_0=0.025 --regions "Zimbabwe" --models "ACCESS-ESM1-5" --json workflow_schema_test.json
+
 # Run with default workflow
 python main.py --alpha=0.5 --Ksoil_0=0.025 --regions "Zimbabwe" --models "ACCESS-ESM1-5"
 

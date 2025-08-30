@@ -66,6 +66,10 @@ class CoinBGCController:
         self.datasets = {}
         self.results = {}
         
+        # Error tracking
+        self.failed_combinations = {}  # {(region, model, step_name): error_message}
+        self.successful_combinations = {}  # {(region, model, step_name): True}
+        
         # Timing tracking
         self.timing_data = {
             'total_start_time': None,
@@ -99,6 +103,9 @@ class CoinBGCController:
             step3_start = time.time()
             self.step3_generate_final_output()
             self.timing_data['step_times']['step3_generate_output'] = time.time() - step3_start
+            
+            # Generate failure/success report
+            self._generate_failure_success_report()
             
             # Generate timing report
             self._generate_timing_report()
@@ -182,11 +189,25 @@ class CoinBGCController:
             for model in models:
                 region_model_start = time.time()
                 print(f"    🎯 Processing: {region} - {model}")
-                self._execute_region_model_workflow(region, model)
                 
-                # Record timing for this region/model combination
-                region_model_key = f"{region}_{model}"
-                self.timing_data['region_model_times'][region_model_key] = time.time() - region_model_start
+                try:
+                    self._execute_region_model_workflow(region, model)
+                    # Record timing for successful completion
+                    region_model_key = f"{region}_{model}"
+                    self.timing_data['region_model_times'][region_model_key] = time.time() - region_model_start
+                    
+                except Exception as e:
+                    # Record failure for entire region/model combination
+                    error_msg = f"{type(e).__name__}: {str(e)}"
+                    print(f"      ❌ Failed processing {region} - {model}: {error_msg}")
+                    
+                    # Mark all steps as failed for this combination
+                    for step in self.workflow_config.steps:
+                        self.failed_combinations[(region, model, step.name)] = error_msg
+                    
+                    # Still record timing even for failures
+                    region_model_key = f"{region}_{model}"
+                    self.timing_data['region_model_times'][region_model_key] = time.time() - region_model_start
         
         print("  ✅ Step 2 completed: All workflow steps executed")
         print()
@@ -303,23 +324,44 @@ class CoinBGCController:
             substep_start = time.time()
             print(f"      🔧 Executing step: {step.name} ({step.step_type})")
             
-            # Execute the workflow step using the new flexible method
-            global_params = {'alpha': self.alpha, 'Ksoil_0': self.Ksoil_0}
-            
-            if self.verbose:
-                self._print_parameter_universe_before_step(step, step_results, global_params)
-            
-            step_result = self.coin_bgc.execute_workflow_step(
-                step, region, model, self.datasets, step_results, global_params, self.workflow_config.bounds, self.verbose
-            )
-            step_results[step.name] = step_result
-            
-            # Record substep timing
-            substep_duration = time.time() - substep_start
-            self.timing_data['substep_times'][region_model_key][step.name] = substep_duration
-            
-            if self.verbose:
-                self._print_parameter_universe_after_step(step, step_result)
+            try:
+                # Execute the workflow step using the new flexible method
+                global_params = {'alpha': self.alpha, 'Ksoil_0': self.Ksoil_0}
+                
+                if self.verbose:
+                    self._print_parameter_universe_before_step(step, step_results, global_params)
+                
+                step_result = self.coin_bgc.execute_workflow_step(
+                    step, region, model, self.datasets, step_results, global_params, self.workflow_config.bounds, self.verbose
+                )
+                step_results[step.name] = step_result
+                
+                # Mark step as successful
+                self.successful_combinations[(region, model, step.name)] = True
+                print(f"        ✅ {step.name} completed successfully")
+                
+                if self.verbose:
+                    self._print_parameter_universe_after_step(step, step_result)
+                    
+            except Exception as e:
+                # Handle step-specific failure
+                error_msg = f"{type(e).__name__}: {str(e)}"
+                print(f"        ❌ {step.name} failed: {error_msg}")
+                
+                # Record the failure
+                self.failed_combinations[(region, model, step.name)] = error_msg
+                
+                # Create a placeholder result to maintain workflow structure
+                step_results[step.name] = {
+                    'status': 'failed',
+                    'error': error_msg,
+                    'parameters': {}  # Empty parameters dict to prevent downstream errors
+                }
+                
+            finally:
+                # Always record timing
+                substep_duration = time.time() - substep_start
+                self.timing_data['substep_times'][region_model_key][step.name] = substep_duration
         
         # Store results for this region/model
         if region not in self.results:
@@ -487,25 +529,48 @@ class CoinBGCController:
         
         for region in self.regions:
             for model in self.models:
-                # Get parameters for this region/model/step combination
-                if (region in self.results and 
-                    model in self.results[region] and 
-                    step_name in self.results[region][model]):
-                    
-                    # Create row with region, model, step, and all parameters
-                    param_data = self.results[region][model][step_name].copy()
+                # Check if this combination was successful
+                combination_key = (region, model, step_name)
+                
+                if combination_key in self.successful_combinations:
+                    # Get parameters for successful combinations
+                    if (region in self.results and 
+                        model in self.results[region] and 
+                        step_name in self.results[region][model]):
+                        
+                        # Create row with region, model, step, and all parameters
+                        param_data = self.results[region][model][step_name].copy()
+                        row = {
+                            'step': step_name,
+                            'region': region,
+                            'model': model,
+                            'timestamp': self.timestamp,
+                            'status': 'SUCCESS',
+                            'error_message': ''
+                        }
+                        row.update(param_data)
+                        
+                        # Calculate goodness-of-fit metrics from simulation results
+                        metrics = self._calculate_goodness_of_fit_metrics(step_name, region, model)
+                        row.update(metrics)
+                        
+                        all_rows.append(row)
+                        
+                elif combination_key in self.failed_combinations:
+                    # Create row for failed combinations with error information
+                    error_msg = self.failed_combinations[combination_key]
                     row = {
                         'step': step_name,
                         'region': region,
                         'model': model,
                         'timestamp': self.timestamp,
+                        'status': 'FAILED',
+                        'error_message': error_msg,
+                        'MSE': None,
+                        'R': None,
+                        'R_squared': None,
+                        'R_p_value': None
                     }
-                    row.update(param_data)
-                    
-                    # Calculate goodness-of-fit metrics from simulation results
-                    metrics = self._calculate_goodness_of_fit_metrics(step_name, region, model)
-                    row.update(metrics)
-                    
                     all_rows.append(row)
         
         if all_rows:
@@ -683,11 +748,14 @@ class CoinBGCController:
         pages_created = 0
         
         with PdfPages(pdf_path) as pdf:
-            # Create a page for each region/model combination
+            # Create a page for each successful region/model combination
             for region in self.regions:
                 for model in self.models:
-                    # Check if we have results for this region/model/step
-                    if (region in self.results and 
+                    # Only create charts for successful combinations
+                    combination_key = (region, model, step.name)
+                    
+                    if (combination_key in self.successful_combinations and
+                        region in self.results and 
                         model in self.results[region] and 
                         step.name in self.results[region][model]):
                         
@@ -837,6 +905,111 @@ class CoinBGCController:
             # If parameter extraction fails, just continue without parameters
             pass
     
+    def _generate_failure_success_report(self):
+        """Generate and display comprehensive failure/success report."""
+        print()
+        print("=" * 60)
+        print("📊 SUCCESS/FAILURE REPORT")
+        print("=" * 60)
+        
+        # Count totals
+        total_successful = len(self.successful_combinations)
+        total_failed = len(self.failed_combinations)
+        total_combinations = total_successful + total_failed
+        
+        if total_combinations == 0:
+            print("🤔 No workflow steps were executed.")
+            return
+        
+        # Summary statistics
+        success_rate = (total_successful / total_combinations) * 100 if total_combinations > 0 else 0
+        print(f"📈 Overall Success Rate: {success_rate:.1f}% ({total_successful}/{total_combinations})")
+        
+        if total_failed > 0:
+            print(f"❌ Failed Combinations: {total_failed}")
+            print()
+            print("🔍 FAILURE DETAILS:")
+            print("-" * 40)
+            
+            # Group failures by error type
+            error_groups = {}
+            for (region, model, step), error_msg in self.failed_combinations.items():
+                error_type = error_msg.split(":")[0]  # Get error class name
+                if error_type not in error_groups:
+                    error_groups[error_type] = []
+                error_groups[error_type].append((region, model, step, error_msg))
+            
+            # Display grouped failures
+            for error_type, failures in error_groups.items():
+                print(f"\n🚫 {error_type} ({len(failures)} occurrences):")
+                for region, model, step, error_msg in failures:
+                    print(f"   • {region} / {model} / {step}: {error_msg}")
+        
+        if total_successful > 0:
+            print()
+            print(f"✅ Successful Combinations: {total_successful}")
+            print()
+            print("🎯 SUCCESS SUMMARY:")
+            print("-" * 40)
+            
+            # Group successes by region/model
+            region_model_success = {}
+            for (region, model, step) in self.successful_combinations:
+                key = f"{region}/{model}"
+                if key not in region_model_success:
+                    region_model_success[key] = []
+                region_model_success[key].append(step)
+            
+            # Display successes grouped by region/model
+            for region_model, steps in region_model_success.items():
+                steps_str = ", ".join(sorted(steps))
+                print(f"   • {region_model}: {len(steps)} steps ({steps_str})")
+        
+        # Save failure report to file
+        self._save_failure_report()
+        
+        print("=" * 60)
+    
+    def _save_failure_report(self):
+        """Save detailed failure report to CSV file."""
+        if not self.failed_combinations and not self.successful_combinations:
+            return
+            
+        import pandas as pd
+        
+        # Create failure report
+        failure_records = []
+        for (region, model, step), error_msg in self.failed_combinations.items():
+            failure_records.append({
+                'region': region,
+                'model': model, 
+                'step': step,
+                'status': 'FAILED',
+                'error_message': error_msg,
+                'error_type': error_msg.split(":")[0]
+            })
+        
+        # Create success report
+        success_records = []
+        for (region, model, step) in self.successful_combinations:
+            success_records.append({
+                'region': region,
+                'model': model,
+                'step': step, 
+                'status': 'SUCCESS',
+                'error_message': '',
+                'error_type': ''
+            })
+        
+        # Combine and save
+        all_records = failure_records + success_records
+        if all_records:
+            df = pd.DataFrame(all_records)
+            filename = f"workflow_execution_report_{self.schema_suffix}_{self.timestamp}.csv"
+            filepath = os.path.join(self.output_dir, filename)
+            df.to_csv(filepath, index=False)
+            print(f"💾 Workflow execution report saved to: {filename}")
+
     def _generate_timing_report(self):
         """Generate and display a comprehensive timing report."""
         total_time = time.time() - self.timing_data['total_start_time']
