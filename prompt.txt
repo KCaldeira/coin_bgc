@@ -1,3 +1,7 @@
+ Tip: Run claude --continue or claude --resume to resume a conversation
+
+---------------------------------
+
 I would like to make the plotting more flexible and say in each step what plots need to be made.
 
 For the statistics for in the csv file with the parameters, we need to calculate statistics based on the time series used in the curve fitting.

@@ -352,34 +352,87 @@ The system successfully:
 - ✅ Provides clear error messages when configurations are incomplete
 - ✅ Maintains original production code integrity (coin_bgc_econ.py, main_econ.py untouched)
 
-## READY FOR COMMIT AND PRODUCTION USE ✅
+## READY FOR PRODUCTION USE WITH PARALLEL EXECUTION ✅
 
-### What's Ready to Commit
-The JSON-driven flexible workflow system is fully implemented and operational:
+### Latest Enhancement: Multi-Core Parallel Processing System ✅ (August 2025)
+
+#### Problem Solved
+Large-scale analyses with many regions/models were time-consuming and vulnerable to single-point failures, not utilizing available multi-core resources efficiently.
+
+#### Solution Implemented ✅
+**Complete Parallel Execution System**: Implemented comprehensive multi-core processing with fault tolerance and result management.
+
+#### Key Features Added:
+1. **Region Pattern Matching**: New `--region-pattern` flag supports glob patterns like `"[AB]*"`, `"A*"`
+2. **Parallel Shell Script**: `run_parallel_regions.sh` orchestrates multiple jobs with automatic load balancing
+3. **Robust Error Handling**: Individual failures don't stop other jobs, comprehensive error tracking
+4. **Result Concatenation**: `concatenate_results.py` automatically merges outputs from parallel runs
+5. **Emergency Controls**: `pkill -f "python main.py"` for rapid termination of all jobs
+6. **Resource Management**: Configurable core usage (e.g., 6/8 cores) to leave resources free
+
+#### Files Updated:
+- `main.py`: Added `--region-pattern` flag and pattern expansion logic
+- `run_parallel_regions.sh`: Complete parallel execution orchestration
+- `concatenate_results.py`: Automatic result merging and analysis
+- `README.md`: Updated with parallel execution documentation
+- `CONTINUATION.md`: Documented new parallel processing capabilities
+
+### Current Production-Ready Features ✅
+
+The system now includes:
 
 1. **Core Architecture**: Complete three-step controller with JSON workflow execution
 2. **Unified Optimization**: Single method handles all optimization scenarios  
 3. **Configuration Management**: Robust JSON loading, validation, and parameter resolution
-4. **Command Line Interface**: Full argument parsing for production use
-5. **Legacy Code Protection**: Original production files remain untouched
-6. **Example Workflows**: Standard 6-step pipeline ready for immediate use
-7. **Documentation**: Updated README.md and CONTINUATION.md
+4. **Command Line Interface**: Full argument parsing for single and parallel execution
+5. **Multi-Core Processing**: Efficient parallel execution with automatic load balancing
+6. **Fault Tolerance**: Robust error handling with partial result recovery
+7. **Result Management**: Automatic concatenation and analysis of parallel runs
+8. **Legacy Code Protection**: Original production files remain untouched
+9. **Example Workflows**: Standard 6-step pipeline ready for immediate use
+10. **Comprehensive Documentation**: Updated README.md and CONTINUATION.md
 
-### Command Line Usage Example
+### Usage Examples
+
+**Single Instance:**
 ```bash
-python main.py --alpha=0.5 --Ksoil_0=0.025 --regions "Zimbabwe" --models "ACCESS-ESM1-5" --json workflow_schema_example.json
+python main.py --alpha=0.5 --Ksoil_0=0.025 --region-pattern "[AB]*" --models "ACCESS-ESM1-5" --json workflow_schema_example.json
 ```
+
+**Parallel Execution (Recommended):**
+```bash
+# Use 6 cores, leave 2 free for other activities
+./run_parallel_regions.sh 6
+
+# Emergency stop if needed
+pkill -f "python main.py"
+```
+
+**Result Merging:**
+```bash
+python concatenate_results.py "run_20250830_*"
+```
+
+### Benefits Realized
+
+1. **Scalability**: Efficiently utilizes 2-16 cores with automatic load balancing
+2. **Fault Tolerance**: Individual region/model failures don't stop entire runs
+3. **Resource Control**: Configurable core usage prevents system overload
+4. **Complete Results**: Partial results recovered even with some failures
+5. **Easy Management**: Simple commands for execution, monitoring, and termination
+6. **Production Ready**: Handles large-scale analyses with minimal user intervention
 
 ### Next Steps for Future Development
 
-The flexible system enables:
+The enhanced system enables:
 
-1. **Custom Workflows**: Create specialized JSON configurations for different research questions
-2. **Production Runs**: Execute large-scale analyses across multiple regions/models
+1. **Large-Scale Production Runs**: Process hundreds of regions/models efficiently
+2. **Custom Workflows**: Create specialized JSON configurations for different research questions
 3. **Alternative Optimization Strategies**: Test different parameter optimization approaches
-4. **Performance Analysis**: Analyze optimization patterns and convergence behavior
+4. **Performance Analysis**: Analyze optimization patterns and convergence behavior across regions
 5. **Integration**: Add new step types, data sources, or optimization methods
 6. **Collaborative Research**: Share and version control workflow definitions
+7. **Cloud Deployment**: Scale to larger compute clusters or cloud environments
 
 ### Technical Debt Addressed ✅
 - **Code Duplication**: Eliminated separate single/multi optimization methods

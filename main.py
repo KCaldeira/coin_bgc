@@ -148,13 +148,23 @@ class CoinBGCController:
         # Load all required datasets
         self._load_datasets()
         
-        # If regions or models are None, extract all available from datasets
-        if self.regions is None or self.models is None:
+        # Check if we need to expand patterns or get all available regions/models
+        needs_expansion = (self.regions is None or self.models is None or 
+                         (self.regions and len(self.regions) == 1 and self.regions[0].startswith('__PATTERN__:')))
+        
+        if needs_expansion:
             all_regions, all_models = self._get_regions_and_models()
             
             if self.regions is None:
                 self.regions = all_regions
                 print(f"  🌍 Using all available regions: {', '.join(self.regions)}")
+            elif len(self.regions) == 1 and self.regions[0].startswith('__PATTERN__:'):
+                # Expand pattern
+                pattern = self.regions[0][12:]  # Remove '__PATTERN__:' prefix
+                self.regions = _expand_region_patterns([pattern], all_regions)
+                print(f"  🌍 Using pattern '{pattern}' → {len(self.regions)} regions: {', '.join(self.regions[:5])}{'...' if len(self.regions) > 5 else ''}")
+            else:
+                print(f"  🌍 Using specified regions: {', '.join(self.regions)}")
                 
             if self.models is None:
                 self.models = all_models
@@ -1329,6 +1339,77 @@ class CoinBGCController:
             return base_name
 
 
+def _parse_patterns(pattern_string):
+    """
+    Parse comma-separated patterns and expand glob patterns.
+    
+    Supports patterns like:
+    - "Brazil,China" (literal names)
+    - "[A-C]*" (glob patterns)  
+    - "A*,B*,Zimbabwe" (mix of patterns and literals)
+    
+    Args:
+        pattern_string: Comma-separated string of patterns
+        
+    Returns:
+        List of literal region names after pattern expansion
+    """
+    import fnmatch
+    import glob
+    
+    if not pattern_string:
+        return None
+        
+    # Split by comma and clean whitespace
+    patterns = [p.strip() for p in pattern_string.split(',')]
+    
+    # We need to get available regions from the data to expand patterns
+    # For now, let's check if any patterns exist and defer expansion to the controller
+    has_patterns = any('*' in p or '[' in p or '?' in p for p in patterns)
+    
+    if not has_patterns:
+        # No patterns, return as-is
+        return patterns
+    else:
+        # Return patterns for later expansion in controller
+        return patterns
+
+def _expand_region_patterns(patterns, available_regions):
+    """
+    Expand glob patterns against available regions.
+    
+    Args:
+        patterns: List of patterns (may include globs)
+        available_regions: List of all available regions
+        
+    Returns:
+        List of matching region names
+    """
+    import fnmatch
+    
+    if not patterns:
+        return available_regions
+        
+    expanded = []
+    for pattern in patterns:
+        if '*' in pattern or '[' in pattern or '?' in pattern:
+            # Glob pattern - match against available regions
+            matched = fnmatch.filter(available_regions, pattern)
+            expanded.extend(matched)
+        else:
+            # Literal region name
+            expanded.append(pattern)
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    result = []
+    for region in expanded:
+        if region not in seen:
+            seen.add(region)
+            result.append(region)
+            
+    return result
+
 def main():
     """Main entry point for the COIN-BGC flexible workflow system."""
     
@@ -1371,6 +1452,12 @@ Examples:
     )
     
     parser.add_argument(
+        '--region-pattern',
+        type=str,
+        help='Glob pattern to match region names (e.g., "[AB]*", "A*"). Cannot be used with --regions.'
+    )
+    
+    parser.add_argument(
         '--models',
         type=str,
         help='Models to process (comma-separated or single model). If not specified, processes all models.'
@@ -1390,7 +1477,18 @@ Examples:
         sys.exit(1)
     
     # Parse regions and models (or use None to indicate "all")
-    regions = [r.strip() for r in args.regions.split(',')] if args.regions else None
+    if args.regions and getattr(args, 'region_pattern', None):
+        print("❌ Error: Cannot specify both --regions and --region-pattern")
+        sys.exit(1)
+    
+    if args.regions:
+        regions = [r.strip() for r in args.regions.split(',')]
+    elif getattr(args, 'region_pattern', None):
+        # Store pattern for later expansion
+        regions = ['__PATTERN__:' + args.region_pattern]
+    else:
+        regions = None
+        
     models = [m.strip() for m in args.models.split(',')] if args.models else None
     
     # Create and run the controller

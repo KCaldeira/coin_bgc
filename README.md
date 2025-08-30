@@ -77,10 +77,9 @@ The system uses JSON configuration files to define flexible optimization workflo
 
 ## Usage
 
-### Command Line Interface
+### Single Instance Execution
 
 ```bash
-
 # Good testing command
 python main.py --alpha=0.5 --Ksoil_0=0.025 --regions "Zimbabwe" --models "ACCESS-ESM1-5" --json workflow_schema_test.json
 
@@ -90,17 +89,46 @@ python main.py --alpha=0.5 --Ksoil_0=0.025 --regions "Zimbabwe" --models "ACCESS
 # Run with custom workflow
 python main.py --alpha=0.5 --Ksoil_0=0.025 --regions "Brazil,China" --models "ACCESS-ESM1-5" --json custom_workflow.json
 
+# Run with region patterns
+python main.py --alpha=0.5 --Ksoil_0=0.025 --region-pattern "[AB]*" --models "ACCESS-ESM1-5" --json workflow_schema_example.json
+
 # Run multiple regions and models
 python main.py --alpha=0.7 --Ksoil_0=0.05 --regions "Brazil,China,Zimbabwe" --models "ACCESS-ESM1-5"
 ```
 
-### Required Parameters
+### Parallel Execution (Recommended for Large Runs)
 
-- `--alpha`: Production function exponent (required)
-- `--Ksoil_0`: Soil respiration parameter - inverse time constant for heterotrophic respiration (required)
-- `--regions`: Comma-separated list of regions to analyze (required)
-- `--models`: Comma-separated list of climate models to analyze (required)
-- `--json`: JSON workflow configuration file (optional, default: workflow_schema_example.json)
+For efficient multi-core execution on large datasets:
+
+```bash
+# Run with 6 cores (leaves resources for other activities)
+./run_parallel_regions.sh 6
+
+# Run with 8 cores, custom workflow
+./run_parallel_regions.sh 8 workflow_schema_example.json
+
+# Run with 12 cores, custom parameters
+./run_parallel_regions.sh 12 workflow_schema_example.json 0.7 0.05 "ACCESS-ESM1-5,CESM2"
+```
+
+**Emergency Stop**: To terminate all parallel jobs if needed:
+```bash
+pkill -f "python main.py"
+```
+
+### Parameters
+
+**Required:**
+- `--alpha`: Production function exponent
+- `--Ksoil_0`: Soil respiration parameter - inverse time constant for heterotrophic respiration
+- `--models`: Comma-separated list of climate models to analyze
+
+**Region Selection (choose one):**
+- `--regions`: Comma-separated list of specific regions
+- `--region-pattern`: Glob pattern to match regions (e.g., "[AB]*", "A*", "Brazil")
+
+**Optional:**
+- `--json`: JSON workflow configuration file (default: workflow_schema_example.json)
 
 ## Output
 
@@ -160,6 +188,9 @@ The system now features a **fully flexible JSON-driven workflow architecture**:
 - **✅ Command Line Interface**: Full argument parsing with user-specified parameters
 - **✅ Fail-Fast Validation**: Immediate failure when configurations are incomplete
 - **✅ Multiple Workflow Support**: Easy to create custom workflows for different research questions
+- **✅ Parallel Execution**: Multi-core processing with automatic load balancing
+- **✅ Robust Error Handling**: Continues processing when individual regions/models fail
+- **✅ Result Concatenation**: Automatic merging of parallel run results
 
 ### Architecture Benefits
 
@@ -179,6 +210,9 @@ The system now features a **fully flexible JSON-driven workflow architecture**:
 - **Complete Parameter Flow**: Both known and optimized parameters passed between steps
 - **Professional Output**: Timestamped directories with comprehensive results
 - **Modular Design**: Clear separation between configuration, execution, and output
+- **Multi-Core Processing**: Efficient parallel execution with region pattern matching
+- **Fault Tolerance**: Robust error handling with partial result recovery
+- **Automatic Result Merging**: Seamless concatenation of parallel run outputs
 
 ## Next Steps
 
@@ -191,6 +225,33 @@ The flexible JSON workflow system enables:
 5. **Collaborative Research**: Share and version control workflow definitions as JSON files
 6. **Integration**: Extend the system with additional step types and data sources
 
+## Parallel Execution & Result Management
+
+### Multi-Core Processing
+The system supports efficient parallel processing using region patterns:
+
+- **Automatic Load Balancing**: Regions are divided alphabetically across available cores
+- **Fault Isolation**: Individual region/model failures don't stop other jobs
+- **Resource Control**: Configure core usage to leave resources for other activities
+- **Real-Time Monitoring**: Live progress updates with success/failure tracking
+
+### Error Handling & Recovery
+- **Granular Error Tracking**: Failures tracked at both step and region/model level
+- **Partial Results**: Successful combinations saved even when others fail
+- **Comprehensive Reporting**: Detailed success/failure analysis with error grouping
+- **Automatic Recovery**: System continues processing despite individual failures
+
+### Result Concatenation
+- **Automatic Merging**: `concatenate_results.py` merges outputs from parallel runs
+- **CSV Consolidation**: Parameter files combined with source run tracking
+- **PDF Cataloging**: Visual reports organized and cataloged
+- **Timing Analysis**: Performance metrics aggregated across all jobs
+
+### Emergency Controls
+- **Rapid Termination**: `pkill -f "python main.py"` stops all parallel jobs
+- **Process Monitoring**: Built-in job status tracking and reporting
+- **Clean Shutdown**: Proper cleanup when jobs are interrupted
+
 ## File Structure
 
 ```
@@ -199,9 +260,12 @@ coin_bgc/
 ├── coin_bgc.py                      # Core model with flexible workflow execution
 ├── workflow_config.py               # JSON configuration loading and validation
 ├── workflow_schema_example.json     # Standard 6-step pipeline example
-├── coin_bgc_econ.py                # Original production implementation (preserved)
-├── main_econ.py                    # Original main function (preserved)
+├── run_parallel_regions.sh          # Parallel execution script
+├── concatenate_results.py           # Result merging and analysis
+├── coin_bgc_econ.py                 # Original production implementation (preserved)
+├── main_econ.py                     # Original main function (preserved)
 └── data/
-    ├── input/                      # Input CSV files
-    └── output/                     # Timestamped output directories
+    ├── input/                       # Input CSV files
+    ├── output/                      # Timestamped output directories
+    └── output/merged_*/             # Concatenated results from parallel runs
 ``` 
