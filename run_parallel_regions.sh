@@ -96,8 +96,10 @@ for i in "${!PATTERNS[@]}"; do
 done
 echo ""
 
-# Array to store background process IDs
+# Arrays to store background process IDs and output directories
 PIDS=()
+OUTPUT_DIRS=()
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # Launch parallel jobs
 for i in "${!PATTERNS[@]}"; do
@@ -106,6 +108,11 @@ for i in "${!PATTERNS[@]}"; do
     
     echo "🔄 Starting Job $JOB_NUM: pattern '$PATTERN'"
     
+    # Create unique output directory name for this job
+    SAFE_PATTERN=$(echo "$PATTERN" | sed 's/[^a-zA-Z0-9]/_/g')  # Replace special chars with underscores
+    OUTPUT_DIR="data/output/parallel_${TIMESTAMP}_job${JOB_NUM}_${SAFE_PATTERN}"
+    OUTPUT_DIRS+=("$OUTPUT_DIR")
+    
     # Run in background and capture PID
     python main.py \
         --alpha="$ALPHA" \
@@ -113,12 +120,13 @@ for i in "${!PATTERNS[@]}"; do
         --region-pattern="$PATTERN" \
         --models="$MODELS" \
         --json="$WORKFLOW_JSON" \
+        --output-dir="$OUTPUT_DIR" \
         &
     
     PID=$!
     PIDS+=($PID)
     
-    echo "   ✅ Job $JOB_NUM (PID $PID) started with pattern: $PATTERN"
+    echo "   ✅ Job $JOB_NUM (PID $PID) started with pattern: $PATTERN → $OUTPUT_DIR"
     
     # Small delay to avoid overwhelming the system
     sleep 2
@@ -191,10 +199,20 @@ echo ""
 if [ $SUCCESSFUL_JOBS -gt 0 ]; then
     echo "🔗 Concatenating results from successful jobs..."
     
-    # Get timestamp pattern for today's runs
-    TODAY_PATTERN="run_$(date +%Y%m%d)_*"
+    # Create pattern matching our specific output directories
+    PARALLEL_PATTERN="parallel_${TIMESTAMP}_*"
     
-    python concatenate_results.py "$TODAY_PATTERN"
+    echo "   📁 Looking for output directories: $PARALLEL_PATTERN"
+    echo "   📁 Expected directories:"
+    for dir in "${OUTPUT_DIRS[@]}"; do
+        if [ -d "$dir" ]; then
+            echo "     ✅ $dir (exists)"
+        else
+            echo "     ❌ $dir (missing)"
+        fi
+    done
+    
+    python concatenate_results.py "$PARALLEL_PATTERN"
     
     echo ""
     echo "✅ Parallel execution and concatenation completed!"

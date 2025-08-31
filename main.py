@@ -32,7 +32,7 @@ from coin_bgc import CoinBGC
 class CoinBGCController:
     """Main controller for JSON-driven COIN-BGC workflow execution."""
     
-    def __init__(self, workflow_file: str, alpha: float, Ksoil_0: float, regions: list, models: list, verbose: bool = False):
+    def __init__(self, workflow_file: str, alpha: float, Ksoil_0: float, regions: list, models: list, verbose: bool = False, output_dir: str = None):
         """
         Initialize the controller with a workflow configuration file and parameters.
         
@@ -51,7 +51,12 @@ class CoinBGCController:
         self.models = models
         self.verbose = verbose
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.output_dir = f"data/output/run_{self.timestamp}"
+        
+        # Use provided output directory or generate default
+        if output_dir:
+            self.output_dir = output_dir
+        else:
+            self.output_dir = f"data/output/run_{self.timestamp}"
         
         # Extract schema suffix from workflow filename (e.g., "example" from "workflow_schema_example.json")
         self.schema_suffix = self._extract_schema_suffix(workflow_file)
@@ -1469,6 +1474,12 @@ Examples:
         help='Enable verbose output showing detailed parameter tracking'
     )
     
+    parser.add_argument(
+        '--output-dir',
+        type=str,
+        help='Custom output directory path (default: auto-generated based on timestamp)'
+    )
+    
     args = parser.parse_args()
     
     # Validate workflow file exists
@@ -1492,7 +1503,7 @@ Examples:
     models = [m.strip() for m in args.models.split(',')] if args.models else None
     
     # Create and run the controller
-    controller = CoinBGCController(args.json, args.alpha, args.Ksoil_0, regions, models, args.verbose)
+    controller = CoinBGCController(args.json, args.alpha, args.Ksoil_0, regions, models, args.verbose, args.output_dir)
     controller.run()
 
 
