@@ -71,14 +71,12 @@ declare -a REGION_PATTERNS=(
 # Adjust patterns based on number of cores requested
 if [ $NUM_CORES -le 6 ]; then
     # Use the predefined patterns
-    PATTERNS=("${REGION_PATTERNS[@]:0:$NUM_CORES}")
+    # PATTERNS=("${REGION_PATTERNS[@]:0:$NUM_CORES}")
+    # ====>>> TESTINT <<<<
+    PATTERNS=("D*" "F*" "H*" "R*" "V*" "J*")
 elif [ $NUM_CORES -le 12 ]; then
     # Add more granular patterns for higher core counts
-    PATTERNS=(
-        "A*" "B*" "[C-D]*" "[E-G]*" "[H-I]*" "[J-L]*" 
-        "[M-N]*" "[O-P]*" "[Q-R]*" "S*" "[T-V]*" "[W-Z]*"
-    )
-    PATTERNS=("${PATTERNS[@]:0:$NUM_CORES}")
+    PATTERNS=("D*" "F*" "H*" "R*" "V*" "J*")
 else
     # For very high core counts, use single letters where possible
     PATTERNS=(

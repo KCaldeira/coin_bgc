@@ -43,132 +43,210 @@ def find_output_directories(pattern=None):
     return sorted(output_dirs)
 
 def concatenate_csv_files(output_dirs, merged_dir):
-    """Concatenate all CSV parameter files."""
-    print("\n💾 Concatenating CSV parameter files...")
+    """Concatenate all standard CSV output files."""
+    print("\n💾 Concatenating CSV files...")
     
-    # Find all unique substep CSV patterns
-    csv_patterns = set()
-    for output_dir in output_dirs:
-        csv_files = glob.glob(os.path.join(output_dir, "substep_parameters_*.csv"))
-        for csv_file in csv_files:
-            # Extract pattern (everything before the timestamp)
-            filename = os.path.basename(csv_file)
-            # Pattern: substep_parameters_stepX_X_schema_timestamp.csv
-            parts = filename.split('_')
-            if len(parts) >= 5:
-                pattern = '_'.join(parts[:-1]) + '_*.csv'  # Remove timestamp part
-                csv_patterns.add(pattern)
+    # Standard file types to concatenate
+    file_types = [
+        "substep_parameters_*.csv",
+        "timing_report_*.csv", 
+        "substep_timing_matrix_*.csv",
+        "substep_timing_summary_*.csv",
+        "workflow_execution_report_*.csv"
+    ]
     
-    # Concatenate each CSV type
-    for pattern in csv_patterns:
-        print(f"   🔗 Processing pattern: {pattern}")
+    for file_pattern in file_types:
+        print(f"   🔗 Processing: {file_pattern}")
+        all_files = []
         all_dataframes = []
         
+        # Collect all matching files from all directories
         for output_dir in output_dirs:
-            matching_files = glob.glob(os.path.join(output_dir, pattern))
-            for csv_file in matching_files:
-                try:
-                    df = pd.read_csv(csv_file)
-                    if not df.empty:
-                        df['source_run'] = os.path.basename(output_dir)
-                        all_dataframes.append(df)
-                except Exception as e:
-                    print(f"     ⚠️  Failed to read {csv_file}: {e}")
+            matching_files = glob.glob(os.path.join(output_dir, file_pattern))
+            all_files.extend(matching_files)
+        
+        if not all_files:
+            print(f"     ⚠️  No files found matching {file_pattern}")
+            continue
+            
+        # Read and combine all matching files
+        for csv_file in all_files:
+            try:
+                df = pd.read_csv(csv_file)
+                if not df.empty:
+                    # Add source run information
+                    df['source_run'] = os.path.basename(os.path.dirname(csv_file))
+                    all_dataframes.append(df)
+            except Exception as e:
+                print(f"     ⚠️  Failed to read {csv_file}: {e}")
         
         if all_dataframes:
             # Combine all dataframes
             merged_df = pd.concat(all_dataframes, ignore_index=True)
             
             # Create output filename
-            # Convert pattern back to specific filename
-            pattern_base = pattern.replace('_*.csv', '')
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"{pattern_base}_merged_{timestamp}.csv"
+            base_name = file_pattern.replace('_*.csv', '').replace('*.csv', 'files')
+            output_filename = f"{base_name}_merged_{timestamp}.csv"
             output_path = os.path.join(merged_dir, output_filename)
             
             # Save merged file
             merged_df.to_csv(output_path, index=False)
             print(f"     ✅ Merged {len(all_dataframes)} files → {output_filename} ({len(merged_df)} rows)")
         else:
-            print(f"     ⚠️  No data files found for pattern {pattern}")
-
-def concatenate_execution_reports(output_dirs, merged_dir):
-    """Concatenate workflow execution reports."""
-    print("\n📊 Concatenating execution reports...")
-    
-    all_reports = []
-    for output_dir in output_dirs:
-        report_files = glob.glob(os.path.join(output_dir, "workflow_execution_report_*.csv"))
-        for report_file in report_files:
-            try:
-                df = pd.read_csv(report_file)
-                if not df.empty:
-                    df['source_run'] = os.path.basename(output_dir)
-                    all_reports.append(df)
-            except Exception as e:
-                print(f"   ⚠️  Failed to read {report_file}: {e}")
-    
-    if all_reports:
-        merged_reports = pd.concat(all_reports, ignore_index=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = os.path.join(merged_dir, f"workflow_execution_report_merged_{timestamp}.csv")
-        merged_reports.to_csv(output_path, index=False)
-        print(f"   ✅ Merged execution reports → workflow_execution_report_merged_{timestamp}.csv ({len(merged_reports)} rows)")
-        
-        # Print summary statistics
-        total_combinations = len(merged_reports)
-        successful = len(merged_reports[merged_reports['status'] == 'SUCCESS'])
-        failed = len(merged_reports[merged_reports['status'] == 'FAILED'])
-        success_rate = (successful / total_combinations * 100) if total_combinations > 0 else 0
-        
-        print(f"   📈 Overall Success Rate: {success_rate:.1f}% ({successful}/{total_combinations})")
-        if failed > 0:
-            print(f"   ❌ Failed Combinations: {failed}")
-            # Show error summary
-            error_counts = merged_reports[merged_reports['status'] == 'FAILED']['error_type'].value_counts()
-            for error_type, count in error_counts.items():
-                print(f"     • {error_type}: {count}")
+            print(f"     ⚠️  No valid data found for {file_pattern}")
 
 def merge_pdf_books(output_dirs, merged_dir):
-    """Create a summary of PDF books (individual PDFs can't be easily merged)."""
-    print("\n📖 Cataloging PDF books...")
+    """Merge PDF books by step/datatype combination across all parallel runs."""
+    print("\n📖 Merging PDF books by step/datatype...")
     
-    all_pdfs = []
+    try:
+        from PyPDF2 import PdfMerger
+        pdf_merger_available = True
+    except ImportError:
+        print("   ⚠️  PyPDF2 not available - will copy PDFs individually instead")
+        pdf_merger_available = False
+    
+    # Collect all PDF files and group by step/datatype
+    pdf_groups = {}  # {step_datatype: [list_of_pdf_paths]}
+    
     for output_dir in output_dirs:
         pdf_files = glob.glob(os.path.join(output_dir, "*.pdf"))
         for pdf_file in pdf_files:
-            all_pdfs.append({
-                'source_run': os.path.basename(output_dir),
-                'pdf_filename': os.path.basename(pdf_file),
-                'pdf_path': pdf_file,
-                'file_size_mb': os.path.getsize(pdf_file) / (1024*1024)
-            })
+            filename = os.path.basename(pdf_file)
+            # Parse filename: step2_6_BGC_full_jobs_YYYYMMDD_HHMMSS.pdf
+            # Look for patterns like _Results_ or _jobs_ or _full_ to split on
+            if "_Results_" in filename:
+                # Extract step_datatype part (everything before _Results_)
+                step_datatype = filename.split("_Results_")[0]
+            elif "_jobs_" in filename:
+                # Extract step_datatype part (everything before _jobs_)  
+                step_datatype = filename.split("_jobs_")[0]
+            elif filename.endswith('.pdf') and filename.count('_') >= 3:
+                # Try to parse by removing timestamp at end
+                # Format: step2_6_BGC_full_jobs_YYYYMMDD_HHMMSS.pdf
+                parts = filename.replace('.pdf', '').split('_')
+                if len(parts) >= 4:
+                    # Take first 3-4 parts as step_datatype (step2_6_BGC or step2_6_BGC_full)
+                    step_datatype = '_'.join(parts[:3])  # step2_6_BGC
+            else:
+                continue  # Skip files that don't match expected patterns
+                
+            if step_datatype not in pdf_groups:
+                pdf_groups[step_datatype] = []
+            pdf_groups[step_datatype].append(pdf_file)
     
-    if all_pdfs:
-        pdf_catalog = pd.DataFrame(all_pdfs)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = os.path.join(merged_dir, f"pdf_catalog_merged_{timestamp}.csv")
-        pdf_catalog.to_csv(output_path, index=False)
-        print(f"   ✅ Created PDF catalog → pdf_catalog_merged_{timestamp}.csv ({len(all_pdfs)} PDFs)")
-        print(f"   📚 Total PDF size: {pdf_catalog['file_size_mb'].sum():.1f} MB")
+    if not pdf_groups:
+        print("   ℹ️  No PDF files found to merge")
+        return
+    
+    pdfs_dir = os.path.join(merged_dir, "merged_pdfs")
+    os.makedirs(pdfs_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    merged_count = 0
+    
+    # Merge PDFs for each step/datatype combination
+    for step_datatype, pdf_files in pdf_groups.items():
+        output_filename = f"{step_datatype}_merged_{timestamp}.pdf"
+        output_path = os.path.join(pdfs_dir, output_filename)
         
-        # Copy PDFs to merged directory with prefixes to avoid conflicts
-        pdf_merged_dir = os.path.join(merged_dir, "pdfs")
-        os.makedirs(pdf_merged_dir, exist_ok=True)
+        if pdf_merger_available and len(pdf_files) > 1:
+            # Merge multiple PDFs into one
+            try:
+                merger = PdfMerger()
+                for pdf_file in sorted(pdf_files):  # Sort for consistent order
+                    merger.append(pdf_file)
+                
+                merger.write(output_path)
+                merger.close()
+                merged_count += 1
+                print(f"   ✅ Merged {len(pdf_files)} PDFs → {output_filename}")
+                
+            except Exception as e:
+                print(f"   ⚠️  Failed to merge {step_datatype}: {e}")
+                # Fallback: copy individual files
+                for i, pdf_file in enumerate(pdf_files):
+                    fallback_name = f"{step_datatype}_job{i+1}_{timestamp}.pdf"
+                    fallback_path = os.path.join(pdfs_dir, fallback_name)
+                    import shutil
+                    shutil.copy2(pdf_file, fallback_path)
         
-        for _, row in pdf_catalog.iterrows():
-            source_path = row['pdf_path']
-            # Prefix with run name to avoid conflicts
-            new_filename = f"{row['source_run']}_{row['pdf_filename']}"
-            dest_path = os.path.join(pdf_merged_dir, new_filename)
-            
+        else:
+            # Single PDF or no merger available - just copy
+            if len(pdf_files) == 1:
+                import shutil
+                shutil.copy2(pdf_files[0], output_path)
+                merged_count += 1
+                print(f"   ✅ Copied single PDF → {output_filename}")
+            else:
+                # Multiple PDFs but no merger - copy individually with job numbers
+                for i, pdf_file in enumerate(pdf_files):
+                    copy_name = f"{step_datatype}_job{i+1}_{timestamp}.pdf"
+                    copy_path = os.path.join(pdfs_dir, copy_name)
+                    import shutil
+                    shutil.copy2(pdf_file, copy_path)
+                merged_count += len(pdf_files)
+                print(f"   ✅ Copied {len(pdf_files)} individual PDFs for {step_datatype}")
+    
+    print(f"   📁 Created {merged_count} merged PDF files in: merged_pdfs/")
+
+def copy_simulation_files(output_dirs, merged_dir):
+    """Copy simulation CSV files with run prefixes."""
+    print("\n📄 Copying simulation CSV files...")
+    
+    simulations_dir = os.path.join(merged_dir, "all_simulations") 
+    os.makedirs(simulations_dir, exist_ok=True)
+    
+    sim_count = 0
+    for output_dir in output_dirs:
+        run_name = os.path.basename(output_dir)
+        sim_files = glob.glob(os.path.join(output_dir, "simulation_*.csv"))
+        for sim_file in sim_files:
+            filename = os.path.basename(sim_file)
+            # Prefix with run name to avoid conflicts  
+            new_name = f"{run_name}_{filename}"
+            dest_path = os.path.join(simulations_dir, new_name)
             try:
                 import shutil
-                shutil.copy2(source_path, dest_path)
+                shutil.copy2(sim_file, dest_path)
+                sim_count += 1
             except Exception as e:
-                print(f"     ⚠️  Failed to copy {row['pdf_filename']}: {e}")
-        
-        print(f"   📁 Copied all PDFs to: {pdf_merged_dir}")
+                print(f"     ⚠️  Failed to copy {filename}: {e}")
+    
+    print(f"   ✅ Copied {sim_count} simulation files to: all_simulations/")
+
+def print_summary_statistics(merged_dir):
+    """Print summary statistics from merged execution reports."""
+    print("\n📊 Summary Statistics:")
+    
+    # Look for merged execution report
+    exec_files = glob.glob(os.path.join(merged_dir, "workflow_execution_report_merged_*.csv"))
+    if exec_files:
+        try:
+            df = pd.read_csv(exec_files[0])  # Use the most recent one
+            
+            total_combinations = len(df)
+            if 'status' in df.columns:
+                successful = len(df[df['status'] == 'SUCCESS'])
+                failed = len(df[df['status'] == 'FAILED'])
+                success_rate = (successful / total_combinations * 100) if total_combinations > 0 else 0
+                
+                print(f"   📈 Overall Success Rate: {success_rate:.1f}% ({successful}/{total_combinations})")
+                if failed > 0:
+                    print(f"   ❌ Failed Combinations: {failed}")
+                    # Show error summary if error_type column exists
+                    if 'error_type' in df.columns:
+                        error_counts = df[df['status'] == 'FAILED']['error_type'].value_counts()
+                        for error_type, count in error_counts.items():
+                            print(f"     • {error_type}: {count}")
+            else:
+                print(f"   📋 Total combinations processed: {total_combinations}")
+                
+        except Exception as e:
+            print(f"   ⚠️  Could not read execution report: {e}")
+    else:
+        print("   ℹ️  No execution report found")
 
 def main():
     """Main concatenation function."""
@@ -198,13 +276,16 @@ def main():
     os.makedirs(merged_dir, exist_ok=True)
     print(f"\n📁 Merged results will be saved to: {merged_dir}")
     
-    # Perform concatenation
+    # Perform concatenation and copying
     concatenate_csv_files(output_dirs, merged_dir)
-    concatenate_execution_reports(output_dirs, merged_dir)
     merge_pdf_books(output_dirs, merged_dir)
+    copy_simulation_files(output_dirs, merged_dir)
+    print_summary_statistics(merged_dir)
     
     print(f"\n✅ Concatenation completed successfully!")
     print(f"📁 Merged results saved to: {merged_dir}")
+    print(f"📁 Merged PDFs by step/datatype in: {merged_dir}/merged_pdfs/")
+    print(f"📁 Individual simulations in: {merged_dir}/all_simulations/")
 
 if __name__ == "__main__":
     main()
