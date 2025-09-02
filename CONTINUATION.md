@@ -434,6 +434,86 @@ The enhanced system enables:
 6. **Collaborative Research**: Share and version control workflow definitions
 7. **Cloud Deployment**: Scale to larger compute clusters or cloud environments
 
+## TODO: Fix Hardcoded Step Names ⚠️
+
+**Issue**: Step names in workflow JSON files are currently NOT arbitrary - they are hardcoded in the implementation.
+
+**Problem**: The code contains hardcoded step name checks like:
+```python
+if step.name == "step2_1":  # Only works with underscores, not dots
+```
+
+And hardcoded lists:
+```python
+for step in ['step2_1', 'step2_2', 'step2_3', 'step2_4', 'step2_5', 'step2_6']:
+```
+
+**Impact**: 
+- Workflow files using `step2.1`, `step2.2` etc. fail because code expects `step2_1`, `step2_2`
+- Cannot create workflows with custom step names
+- Limits workflow flexibility contrary to the JSON-driven design goals
+
+**Solution Needed**:
+1. Remove all hardcoded step name checks from `coin_bgc.py` and `coin_bgc_econ.py`
+2. Make step logic generic based on step configuration rather than step names
+3. Update calculation step logic to work with any step name
+4. Test with both underscore and dot naming conventions
+5. Document that step names should be truly arbitrary strings
+
+**Files to Update**:
+- `coin_bgc.py`: Lines 889, 1101, 1177, 1186, 1501, 1513
+- `coin_bgc_econ.py`: Lines 948, 1024, 1033, 1348, 1360
+- Any other files with hardcoded step name references
+
+## TODO: Fix Fake JSON Calculations ⚠️
+
+**Issue**: The `calculations` section in JSON workflow files is completely fictional - the code doesn't actually parse or use these expressions.
+
+**Problem**: The JSON shows calculation expressions like:
+```json
+"calculations": {
+  "Kresp_0": "1 - npp_mean / gpp_mean",
+  "Cland_0": "npp_mean / Ksoil_0",
+  "Ktfp_0": "gpp_mean / (Cland_0 ** alpha)",
+  "Ktfp_tas0": "tas_mean", 
+  "Ktfp_pr0": "pr_mean"
+}
+```
+
+But the code completely ignores these and uses hardcoded logic instead:
+```python
+if step.name == "step2_1":  # Hardcoded step name check
+    # Hardcoded calculations - JSON expressions ignored
+    Kresp_0 = 1 - (npp_mean / gpp_mean)
+    Cland_0 = npp_mean / Ksoil_0
+    # etc.
+elif hasattr(step, 'calculations'):
+    raise ValueError(f"Generic calculation step evaluation not implemented for step {step.name}")
+```
+
+**Impact**:
+- JSON workflow files are misleading - they appear to define calculations but don't
+- Cannot create new calculation steps without modifying code
+- Violates the JSON-driven workflow design principle
+- Users expect the JSON expressions to work but they're ignored
+
+**Solution Needed**:
+1. Implement a generic expression parser that can evaluate the JSON calculation expressions
+2. Remove hardcoded step2_1 logic and make it use the JSON expressions 
+3. Support variable substitution (npp_mean, gpp_mean, Ksoil_0, alpha, etc.)
+4. Add proper error handling for invalid expressions
+5. Test that existing workflows produce identical results after the change
+
+**Current Status**: All calculation steps are hardcoded and JSON `calculations` are fictional/ignored
+
+## Parameter Default Values: Missing Parameters Default to Zero
+
+**Design Requirement**: When a parameter is referenced from a previous step but not found in that step's results, the system should default the parameter value to 0.0 instead of throwing an error.
+
+**Rationale**: Some parameters (like climate sensitivity coefficients `Ktfp_tas1`, `Ktfp_tas2`, etc.) may not be calculated in initial steps but are needed in later optimization steps. The system should gracefully handle missing parameters by using zero as the default value.
+
+**Example**: If step2_2 references `{"source": "step", "step": "step2_1"}` for `Ktfp_tas1`, but step2_1 didn't calculate `Ktfp_tas1`, then `Ktfp_tas1` should default to 0.0.
+
 ### Technical Debt Addressed ✅
 - **Code Duplication**: Eliminated separate single/multi optimization methods
 - **Hardcoded Workflows**: Replaced with flexible JSON configuration system  
@@ -442,12 +522,13 @@ The enhanced system enables:
 - **Maintainability**: Clear separation of concerns between config, execution, and output
 
 ## Dependencies
-- pandas==2.0.3 - Data manipulation and analysis
-- numpy==1.24.4 - Numerical operations
-- scipy==1.10.1 - Scientific computing and optimization
-- scikit-learn==1.3.2 - Machine learning utilities
-- statsmodels==0.14.1 - Statistical modeling
-- matplotlib==3.7.2 - Plotting and PDF generation
+- pandas==2.3.2 - Data manipulation and analysis
+- numpy==2.3.2 - Numerical operations
+- scipy==1.16.1 - Scientific computing and optimization
+- scikit-learn==1.7.1 - Machine learning utilities
+- statsmodels==0.14.5 - Statistical modeling
+- matplotlib==3.10.6 - Plotting and PDF generation
+- PyPDF2==3.0.1 - PDF merging for parallel run concatenation
 
 ## License
 MIT License 

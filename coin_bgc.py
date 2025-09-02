@@ -1050,7 +1050,9 @@ class CoinBGC:
                 if not param_name:
                     raise ValueError(f"Parameter name not specified in step reference")
                 if param_name not in step_result:
-                    raise ValueError(f"Parameter {param_name} not found in step {step_name} results")
+                    # Default to 0.0 for missing parameters instead of raising error
+                    print(f"        ⚠️  Parameter '{param_name}' not found in step '{step_name}' results, defaulting to 0.0")
+                    return 0.0
                 return step_result[param_name]
             elif param_spec.source == 'value':
                 # Direct value specification

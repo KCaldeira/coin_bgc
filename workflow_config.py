@@ -270,7 +270,9 @@ class WorkflowExecutor:
                 raise ValueError(f"Step '{param_spec.step}' results not found when resolving {param_spec.name}")
             step_results = self.step_results[param_spec.step]
             if param_spec.name not in step_results:
-                raise ValueError(f"Parameter '{param_spec.name}' not found in step '{param_spec.step}' results")
+                # Default to 0.0 for missing parameters instead of raising error
+                print(f"        ⚠️  Parameter '{param_spec.name}' not found in step '{param_spec.step}' results, defaulting to 0.0")
+                return 0.0
             return step_results[param_spec.name]
         elif param_spec.source == 'user_input':
             if param_spec.name in self.global_params:

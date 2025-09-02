@@ -75,6 +75,29 @@ The system uses JSON configuration files to define flexible optimization workflo
 - **Fail-Fast Validation**: Missing parameters or configurations cause immediate failure
 - **Consistent Interface**: Same optimization method for all step types
 
+## Installation
+
+1. **Clone the repository** and navigate to the project directory
+2. **Create a virtual environment**:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+3. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### Dependencies
+
+- `pandas==2.3.2` - Data manipulation and analysis
+- `numpy==2.3.2` - Numerical operations  
+- `scipy==1.16.1` - Scientific computing and optimization
+- `scikit-learn==1.7.1` - Machine learning utilities
+- `statsmodels==0.14.5` - Statistical modeling
+- `matplotlib==3.10.6` - Plotting and PDF generation
+- `PyPDF2==3.0.1` - PDF merging for parallel run concatenation
+
 ## Usage
 
 ### Single Instance Execution

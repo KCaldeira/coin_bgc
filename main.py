@@ -488,6 +488,8 @@ class CoinBGCController:
                                 co2_data = self.datasets.get('co2_data') if use_co2 else None
                                 
                                 # Run simulation
+                                print(f"        DEBUG: About to run simulation for step {step.name}, region {region}, model {model}, data_source {data_source}")
+                                print(f"        DEBUG: params keys: {list(params.keys()) if params else 'None'}")
                                 results = self.coin_bgc.execute_model(dataset, params, co2_data)
                                 
                                 # Save simulation results
