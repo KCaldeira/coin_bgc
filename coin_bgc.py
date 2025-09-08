@@ -489,7 +489,7 @@ class CoinBGC:
         # Calculate Ktfp_co2_max such that co2_factor = 1 when co2 = co2_0
         # Ktfp_co2_max = (co2_0 + Ktfp_co2_half) / co2_0
         Ktfp_co2_max = (self.co2_0 + params['Ktfp_co2_half']) / self.co2_0
-        co2_factor = 1.0 + Ktfp_co2_max * co2 / (co2 + params['Ktfp_co2_half'])
+        co2_factor = Ktfp_co2_max * co2 / (co2 + params['Ktfp_co2_half'])
         
         return np.maximum(0.0, ktfp_0 * tas_factor * pr_factor * co2_factor)
     
